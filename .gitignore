@@ -1,0 +1,40 @@
+# Visual Studio
+.vs/
+*.user
+*.rsuser
+*.suo
+*.sln.docstates
+
+# Build
+[Bb]in/
+[Oo]bj/
+artifacts/
+publish/
+out/
+
+# Testes / cobertura
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+
+# Logs
+*.log
+logs/
+
+# Config local / sensível
+.env
+.env.*
+appsettings.Local.json
+appsettings.*.local.json
+
+# Publicação
+*.publishsettings
+Properties/PublishProfiles/*.pubxml.user
+
+# Docker / arquivos locais
+docker-compose.*.user
+
+# SO
+.DS_Store
+Thumbs.db

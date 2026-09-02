@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/Adapter/" />
+  <Folder Name="/Adapter/Driven/">
+    <Project Path="Infrastructure/Infrastructure.csproj" Id="08d35a82-7486-4605-9a93-dbeb820c2ea4" />
+  </Folder>
+  <Folder Name="/Adapter/Driver/">
+      <Project Path="reader-api/reader-api.csproj" />
+  </Folder>
+  <Folder Name="/Core/">
+    <Project Path="Application/Application.csproj" Id="a3f60ab4-3d5d-48f2-a120-0be14488f364" />
+    <Project Path="Domain/Domain.csproj" Id="dcc10de0-45dc-40a5-bd12-738daad6d857" />
+  </Folder>
+  <Folder Name="/Tests/">
+      <Project Path="reader-api.Tests/reader-api.Tests.csproj" Id="a6250db8-db74-48b5-8f9d-f0e9087124ec" />
+  </Folder>
+</Solution>
