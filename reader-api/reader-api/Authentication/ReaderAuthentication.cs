@@ -32,7 +32,7 @@ public sealed class JwtOptions
 
     public void Validate()
     {
-        if (string.IsNullOrWhiteSpace(Issuer) || string.IsNullOrWhiteSpace(Audience) || SigningKey.Length < 32 || string.IsNullOrWhiteSpace(Email) || string.IsNullOrWhiteSpace(Password) || LifetimeMinutes < 1)
+        if (string.IsNullOrWhiteSpace(Issuer) || string.IsNullOrWhiteSpace(Audience) || string.IsNullOrWhiteSpace(SigningKey) || SigningKey.Length < 32 || string.IsNullOrWhiteSpace(Email) || string.IsNullOrWhiteSpace(Password) || LifetimeMinutes < 1)
         {
             throw new InvalidOperationException("Jwt configuration is invalid.");
         }
