@@ -17,6 +17,12 @@ public sealed class ReadingProgress
         Update(currentPage, pageCount, readAt);
     }
 
+    // EF Core materialization.
+    private ReadingProgress()
+    {
+        Chapter = null!;
+    }
+
     public Guid Id { get; }
 
     public ChapterReference Chapter { get; }

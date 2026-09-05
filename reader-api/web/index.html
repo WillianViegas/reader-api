@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reader — Leitor de Mangás</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- Loading inicial -->
+    <div class="boot" id="boot">
+      <div class="boot-mark"></div>
+    </div>
+
+    <!-- Auth -->
+    <section id="view-auth" class="view auth" hidden>
+      <div class="auth-card">
+        <h1 class="auth-title">Reader</h1>
+        <p class="auth-sub">Sua biblioteca de mangás</p>
+        <div class="auth-tabs">
+          <button class="auth-tab is-active" id="tab-login" type="button">Entrar</button>
+          <button class="auth-tab" id="tab-register" type="button">Criar conta</button>
+        </div>
+        <form id="form-login" class="auth-form">
+          <input class="field" type="email" name="email" placeholder="E-mail" autocomplete="email" required />
+          <input class="field" type="password" name="password" placeholder="Senha" autocomplete="current-password" required />
+          <button class="btn btn-primary" type="submit">Entrar</button>
+        </form>
+        <form id="form-register" class="auth-form" hidden>
+          <input class="field" type="text" name="displayName" placeholder="Nome de exibição" required />
+          <input class="field" type="email" name="email" placeholder="E-mail" autocomplete="email" required />
+          <input class="field" type="password" name="password" placeholder="Senha (mín. 8 caracteres)" minlength="8" autocomplete="new-password" required />
+          <button class="btn btn-primary" type="submit">Criar conta</button>
+        </form>
+        <p class="auth-error" id="auth-error" role="alert" hidden></p>
+      </div>
+    </section>
+
+    <!-- App shell -->
+    <section id="view-shell" class="view shell" hidden>
+      <header class="topbar">
+        <div class="topbar-brand">Reader</div>
+        <div class="topbar-search">
+          <input class="field" id="search-input" type="search" placeholder="Buscar no catálogo…" autocomplete="off" />
+        </div>
+        <nav class="topbar-nav">
+          <button class="nav-btn is-active" data-view="catalog" type="button">Catálogo</button>
+          <button class="nav-btn" data-view="library" type="button">Biblioteca</button>
+          <button class="nav-btn" data-view="continue" type="button">Continuar lendo</button>
+          <button class="nav-btn nav-btn-ghost" id="btn-auth" type="button">Entrar</button>
+        </nav>
+      </header>
+
+      <main class="content">
+        <div class="content-status" id="content-status" hidden></div>
+        <div class="grid" id="grid"></div>
+        <div class="empty" id="empty" hidden>
+          <p>Nenhum resultado.</p>
+        </div>
+      </main>
+    </section>
+
+    <!-- Detail -->
+    <section id="view-detail" class="view detail" hidden>
+      <button class="btn-back" id="btn-detail-back" type="button">← Voltar</button>
+      <div class="detail-body">
+        <div class="detail-cover"><img id="detail-cover" alt="" /></div>
+        <div class="detail-info">
+          <h2 id="detail-title" class="detail-title"></h2>
+          <p id="detail-meta" class="detail-meta"></p>
+          <p id="detail-desc" class="detail-desc"></p>
+          <div class="detail-actions">
+            <button class="btn btn-primary" id="btn-add-library" type="button">Adicionar à biblioteca</button>
+            <button class="btn btn-ghost" id="btn-toggle-fav" type="button" hidden>Favoritar</button>
+          </div>
+          <h3 class="detail-chapters-title">Capítulos</h3>
+          <ul class="chapter-list" id="chapter-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Reader -->
+    <section id="view-reader" class="view reader" hidden>
+      <div class="reader-stage" id="reader-stage">
+        <img id="reader-page" class="reader-page" alt="Página" />
+        <div class="reader-progress" id="reader-progress"><span></span></div>
+        <div class="reader-controls" id="reader-controls">
+          <button class="reader-btn" id="reader-back" type="button">← Biblioteca</button>
+          <div class="reader-controls-right">
+            <span class="reader-counter" id="reader-counter"></span>
+            <button class="reader-btn" id="reader-zoom" type="button">Zoom</button>
+            <button class="reader-btn" id="reader-complete" type="button">Concluir capítulo</button>
+          </div>
+        </div>
+        <button class="reader-nav reader-nav-prev" id="reader-prev" type="button" aria-label="Anterior">‹</button>
+        <button class="reader-nav reader-nav-next" id="reader-next" type="button" aria-label="Próxima">›</button>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

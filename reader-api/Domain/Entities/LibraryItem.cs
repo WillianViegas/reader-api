@@ -26,6 +26,12 @@ public sealed class LibraryItem
         UpdatedAt = createdAt;
     }
 
+    // EF Core materialization.
+    private LibraryItem()
+    {
+        Manga = null!;
+    }
+
     public Guid Id { get; }
 
     public Guid UserId { get; }

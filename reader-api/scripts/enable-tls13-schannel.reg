@@ -1,0 +1,15 @@
+Windows Registry Editor Version 5.00
+
+; Habilita TLS 1.3 (cliente) no SChannel do Windows.
+; Aplique com um duplo clique (ou reg import) como Administrador e REINICIE o computador.
+; Necessário para que apps .NET/SChannel negociem TLS com hosts que exigem TLS 1.3 (ex.: api.mangadex.org).
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.3]
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.3\Client]
+"Enabled"=dword:00000001
+"DisabledByDefault"=dword:00000000
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.3\Server]
+"Enabled"=dword:00000001
+"DisabledByDefault"=dword:00000000

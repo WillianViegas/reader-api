@@ -23,6 +23,13 @@ public sealed record ChapterReference
         Number = Normalize(number);
     }
 
+    // EF Core materialization.
+    private ChapterReference()
+    {
+        Id = null!;
+        Language = null!;
+    }
+
     public ExternalResourceId Id { get; }
 
     public string Language { get; }

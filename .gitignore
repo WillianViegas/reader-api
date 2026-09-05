@@ -35,6 +35,11 @@ Properties/PublishProfiles/*.pubxml.user
 # Docker / arquivos locais
 docker-compose.*.user
 
+# Banco de dados local
+*.db
+*.db-shm
+*.db-wal
+
 # SO
 .DS_Store
 Thumbs.db

@@ -1,5 +1,9 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Reader.Api.Infrastructure.DatabaseConfig;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using reader_api.Controllers;
@@ -99,8 +103,15 @@ public class UsersEndpointTests
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    private static WebApplicationFactory<Program> CreateFactory() => new WebApplicationFactory<Program>()
-        .WithWebHostBuilder(builder => builder.UseEnvironment("Development"));
+    private static WebApplicationFactory<Program> CreateFactory()
+    {
+        var factory = new ReaderApiFactory();
+        _ = factory.Server;
+
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<ReaderDbContext>().Database.EnsureCreated();
+        return factory;
+    }
 
     private static async Task<string> LoginAsync(HttpClient client)
     {

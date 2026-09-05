@@ -23,6 +23,13 @@ public sealed record MangaReference
         SnapshotUpdatedAt = snapshotUpdatedAt;
     }
 
+    // EF Core materialization.
+    private MangaReference()
+    {
+        Id = null!;
+        Title = null!;
+    }
+
     public ExternalResourceId Id { get; }
 
     public string Title { get; }

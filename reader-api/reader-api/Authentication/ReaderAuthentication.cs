@@ -6,7 +6,6 @@ using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using Reader.Api.Application.Ports;
 using Reader.Api.Application.UseCases;
-using Reader.Api.Domain.Entities;
 
 namespace reader_api.Authentication;
 
@@ -125,40 +124,4 @@ public sealed class HttpCurrentUser(IHttpContextAccessor httpContextAccessor) : 
 public sealed class SystemClock : IClock
 {
     public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
-}
-
-public sealed class NoOpUnitOfWork : IUnitOfWork
-{
-    public Task SaveChangesAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-}
-
-public sealed class InMemoryUserRepository : IUserRepository
-{
-    private readonly ConcurrentDictionary<Guid, User> usersById = new();
-    private readonly ConcurrentDictionary<string, Guid> userIdsBySubject = new(StringComparer.Ordinal);
-
-    public Task AddAsync(User user, CancellationToken cancellationToken = default)
-    {
-        if (!userIdsBySubject.TryAdd(user.ExternalSubject, user.Id))
-        {
-            throw new InvalidOperationException("A user with this external subject already exists.");
-        }
-
-        usersById[user.Id] = user;
-        return Task.CompletedTask;
-    }
-
-    public Task<User?> GetByExternalSubjectAsync(string externalSubject, CancellationToken cancellationToken = default)
-    {
-        var user = userIdsBySubject.TryGetValue(externalSubject, out var userId) && usersById.TryGetValue(userId, out var found)
-            ? found
-            : null;
-        return Task.FromResult(user);
-    }
-
-    public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-    {
-        usersById.TryGetValue(id, out var user);
-        return Task.FromResult(user);
-    }
 }
