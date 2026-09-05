@@ -14,6 +14,9 @@ const state = {
   token: localStorage.getItem('reader.token') || null,
   view: 'auth',
   searchQuery: '',
+  catalogPage: 1,
+  catalogCategory: '',
+  catalogTotal: 0,
   detail: null, // { manga, chapters, inLibrary, isFavorite }
   reader: null, // { mangaId, chapter, pages, page, zoom, saveTimer }
 };
@@ -64,6 +67,20 @@ function setStatus(text) {
   el.hidden = !text;
 }
 
+function setPagination(result) {
+  const pagination = $('pagination');
+  if (!result || result.totalCount === 0) {
+    pagination.hidden = true;
+    return;
+  }
+
+  const pageCount = Math.ceil(result.totalCount / result.pageSize);
+  $('pagination-status').textContent = `Página ${result.page} de ${pageCount}`;
+  $('page-prev').disabled = result.page <= 1;
+  $('page-next').disabled = result.page >= pageCount;
+  pagination.hidden = false;
+}
+
 function coverUrl(url) {
   if (!url) return '';
 
@@ -88,11 +105,12 @@ function coverCard(item, { onOpen, showFav = false }) {
   card.className = 'card';
   card.type = 'button';
   const sourceCoverUrl = coverUrl(item.coverUrl);
+  const favorite = showFav && item.isFavorite ? '<p class="card-meta"><span class="card-fav">★</span></p>' : '';
   card.innerHTML = `
     ${sourceCoverUrl ? `<img class="card-cover" src="${sourceCoverUrl}" alt="" loading="lazy" />` : `<div class="card-cover"></div>`}
     <div class="card-body">
       <p class="card-title"></p>
-      <p class="card-meta">${item.originalLanguage || ''}${showFav && item.isFavorite ? ' · <span class="card-fav">★</span>' : ''}</p>
+      ${favorite}
     </div>`;
   card.querySelector('.card-title').textContent = item.title;
   card.addEventListener('click', () => onOpen(item));
@@ -124,6 +142,7 @@ function logout() {
 
 // ---------- Telas do shell ----------
 async function showLibrary(favoriteOnly = false) {
+  setPagination();
   if (!state.token) {
     setStatus('Entre para ver sua biblioteca.');
     $('grid').replaceChildren();
@@ -157,6 +176,7 @@ async function showLibrary(favoriteOnly = false) {
 }
 
 async function showContinueReading() {
+  setPagination();
   if (!state.token) {
     setStatus('Entre para continuar lendo.');
     $('grid').replaceChildren();
@@ -191,12 +211,18 @@ async function showContinueReading() {
   }
 }
 
-async function searchCatalog(query) {
+async function searchCatalog(query = state.searchQuery, page = 1) {
   const term = (query || '').trim();
+  state.searchQuery = term;
+  state.catalogPage = page;
   setStatus(term ? 'Buscando no catálogo…' : 'Carregando catálogo…');
   try {
-    const qs = term ? `?title=${encodeURIComponent(term)}&pageSize=30` : '?pageSize=30';
+    const params = new URLSearchParams({ page: String(page), pageSize: '18' });
+    if (term) params.set('title', term);
+    if (state.catalogCategory) params.set('category', state.catalogCategory);
+    const qs = `?${params}`;
     const result = await api(`/api/catalog/manga${qs}`);
+    state.catalogTotal = result.totalCount;
     setStatus('');
     $('grid').replaceChildren(
       ...result.items.map((m) =>
@@ -204,13 +230,71 @@ async function searchCatalog(query) {
       ),
     );
     $('empty').hidden = result.items.length > 0;
+    setPagination(result);
   } catch (e) {
     setStatus(`Catálogo indisponível: ${e.message}`);
     $('grid').replaceChildren();
+    setPagination();
   }
 }
 
 // ---------- Detalhe ----------
+function languageLabel(language) {
+  return new Intl.DisplayNames(['pt-BR'], { type: 'language' }).of(language) || language;
+}
+
+function renderChapterLanguages(mangaId, chapters) {
+  const tabs = $('chapter-language-tabs');
+  const chapterList = $('chapter-list');
+  const byLanguage = new Map();
+  for (const chapter of chapters) {
+    const language = chapter.language || 'unknown';
+    byLanguage.set(language, [...(byLanguage.get(language) || []), chapter]);
+  }
+
+  const languages = [...byLanguage.keys()];
+  const initialLanguage = languages.includes('pt-br') ? 'pt-br' : languages[0];
+  tabs.replaceChildren();
+
+  const renderChapters = (language) => {
+    chapterList.replaceChildren(
+      ...(byLanguage.get(language) || []).map((chapter) => {
+        const item = document.createElement('li');
+        item.className = 'chapter-item';
+        const label = [
+          chapter.volume ? `Vol. ${chapter.volume}` : null,
+          chapter.number ? `Cap. ${chapter.number}` : null,
+          chapter.title || null,
+        ].filter(Boolean).join(' — ') || chapter.id;
+        item.textContent = label;
+        item.addEventListener('click', () => openChapter(mangaId, null, chapter));
+        return item;
+      }),
+    );
+  };
+
+  for (const language of languages) {
+    const tab = document.createElement('button');
+    tab.className = 'chapter-language-tab';
+    tab.type = 'button';
+    tab.role = 'tab';
+    tab.textContent = languageLabel(language);
+    tab.setAttribute('aria-selected', String(language === initialLanguage));
+    tab.addEventListener('click', () => {
+      tabs.querySelectorAll('[role="tab"]').forEach((button) => button.setAttribute('aria-selected', 'false'));
+      tab.setAttribute('aria-selected', 'true');
+      renderChapters(language);
+    });
+    tabs.append(tab);
+  }
+
+  if (initialLanguage) {
+    renderChapters(initialLanguage);
+  } else {
+    chapterList.innerHTML = '<li class="chapter-sub">Nenhum capítulo legível disponível.</li>';
+  }
+}
+
 async function openDetail(mangaId) {
   show('detail');
   $('detail-title').textContent = 'Carregando…';
@@ -247,24 +331,7 @@ async function openDetail(mangaId) {
     favBtn.hidden = !inLibrary;
     favBtn.textContent = isFavorite ? '★ Favorito' : '☆ Favoritar';
 
-    $('chapter-list').replaceChildren(
-      ...chapters.items.map((ch) => {
-        const li = document.createElement('li');
-        li.className = 'chapter-item';
-        const label = [
-          ch.volume ? `Vol. ${ch.volume}` : null,
-          ch.number ? `Cap. ${ch.number}` : null,
-          ch.title || null,
-        ].filter(Boolean).join(' — ') || ch.id;
-        li.innerHTML = `<span class="chapter-name"></span><span class="chapter-sub">${ch.language}</span>`;
-        li.querySelector('.chapter-name').textContent = label;
-        li.addEventListener('click', () => openChapter(mangaId, null, ch));
-        return li;
-      }),
-    );
-    if (chapters.items.length === 0) {
-      $('chapter-list').innerHTML = '<li class="chapter-sub">Nenhum capítulo legível disponível.</li>';
-    }
+    renderChapterLanguages(mangaId, chapters.items);
   } catch (e) {
     $('detail-title').textContent = 'Erro ao carregar';
     $('detail-desc').textContent = e.message;
@@ -310,10 +377,13 @@ function renderPage() {
   const r = state.reader;
   if (!r) return;
   const total = r.pages.length;
+  const stage = $('reader-stage');
+  stage.scrollTop = 0;
+  stage.scrollLeft = 0;
   $('reader-page').src = r.pages[r.page];
   $('reader-counter').textContent = `${r.page + 1} / ${total}`;
   $('reader-progress').querySelector('span').style.width = `${((r.page + 1) / total) * 100}%`;
-  $('reader-stage').dataset.zoom = String(r.zoom);
+  stage.dataset.zoom = String(r.zoom);
   scheduleProgressSave();
 }
 
@@ -405,6 +475,7 @@ function bindEvents() {
       btn.classList.add('is-active');
       $('search-input').value = '';
       state.searchQuery = '';
+      state.catalogPage = 1;
       if (btn.dataset.view === 'catalog') await searchCatalog('');
       else if (btn.dataset.view === 'library') await showLibrary();
       else if (btn.dataset.view === 'continue') await showContinueReading();
@@ -415,11 +486,23 @@ function bindEvents() {
   let searchTimer;
   $('search-input').addEventListener('input', (e) => {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => searchCatalog(e.target.value), 400);
+    searchTimer = setTimeout(() => searchCatalog(e.target.value, 1), 400);
+  });
+  $('category-filter').addEventListener('change', (e) => {
+    state.catalogCategory = e.target.value;
+    searchCatalog(state.searchQuery, 1);
+  });
+  $('page-prev').addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    searchCatalog(state.searchQuery, state.catalogPage - 1);
+  });
+  $('page-next').addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    searchCatalog(state.searchQuery, state.catalogPage + 1);
   });
 
   // Detail
-  $('btn-detail-back').addEventListener('click', async () => { show('shell'); await searchCatalog(''); });
+  $('btn-detail-back').addEventListener('click', async () => { show('shell'); await searchCatalog(state.searchQuery, state.catalogPage); });
   $('btn-add-library').addEventListener('click', async () => {
     const d = state.detail;
     if (!d) return;

@@ -12,7 +12,7 @@ public sealed record GetContinueReadingQuery;
 
 public sealed record GetReadingProgressQuery(ExternalCatalogProvider Provider, string MangaId);
 
-public sealed record SearchCatalogQuery(string? Title, int Page = 1, int PageSize = 20);
+public sealed record SearchCatalogQuery(string? Title, int Page = 1, int PageSize = 20, string? Category = null);
 
 public sealed record GetMangaDetailsQuery(ExternalCatalogProvider Provider, string MangaId);
 

@@ -17,7 +17,7 @@ public sealed class CatalogController(
     IHttpClientFactory httpClientFactory) : ControllerBase
 {
     private static readonly System.Text.RegularExpressions.Regex MangaIdPattern = new("^[0-9a-fA-F-]{36}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-    private static readonly System.Text.RegularExpressions.Regex CoverFileNamePattern = new("^[a-zA-Z0-9_-]+\\.(?:jpg|jpeg|png|webp|gif)$", System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    private static readonly System.Text.RegularExpressions.Regex CoverFileNamePattern = new("^[a-zA-Z0-9_-]+\\.(?:jpg|jpeg|png|webp|gif)(?:\\.(?:256|512))?\\.(?:jpg|jpeg|png|webp|gif)$|^[a-zA-Z0-9_-]+\\.(?:jpg|jpeg|png|webp|gif)$", System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     [HttpGet("manga")]
     [ProducesResponseType<PagedResultDto<MangaSummaryDto>>(StatusCodes.Status200OK)]
@@ -25,10 +25,11 @@ public sealed class CatalogController(
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<PagedResultDto<MangaSummaryDto>>> Search(
         [FromQuery] string? title,
+        [FromQuery] string? category,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default) =>
-        Ok(await searchCatalog.HandleAsync(new SearchCatalogQuery(title, page, pageSize), cancellationToken));
+        Ok(await searchCatalog.HandleAsync(new SearchCatalogQuery(title, page, pageSize, category), cancellationToken));
 
     [HttpGet("manga/{mangaId}")]
     [ProducesResponseType<MangaDetailsDto>(StatusCodes.Status200OK)]

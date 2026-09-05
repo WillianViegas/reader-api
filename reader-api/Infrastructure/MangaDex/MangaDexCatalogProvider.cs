@@ -13,8 +13,9 @@ public sealed class MangaDexCatalogProvider(MangaDexApiClient client, MangaDexOp
         var limit = Math.Clamp(query.PageSize, 1, options.MaxPageSize);
         var offset = (query.Page - 1) * limit;
         var title = string.IsNullOrWhiteSpace(query.Title) ? null : $"&title={Uri.EscapeDataString(query.Title.Trim())}";
+        var category = string.IsNullOrWhiteSpace(query.Category) ? null : $"&includedTags[]={Uri.EscapeDataString(query.Category.Trim())}";
         var response = await client.GetAsync<MangaDexCollectionResponse<MangaDexManga>>(
-            $"manga?limit={limit}&offset={offset}&includes[]=cover_art{title}",
+            $"manga?limit={limit}&offset={offset}&includes[]=cover_art{title}{category}",
             options.MaxRetryAttempts,
             cancellationToken);
 
