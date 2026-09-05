@@ -67,6 +67,12 @@ builder.Services.AddHttpClient<MangaDexApiClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(mangaDexOptions.TimeoutSeconds);
     client.DefaultRequestHeaders.UserAgent.ParseAdd(mangaDexOptions.UserAgent);
 });
+builder.Services.AddHttpClient("MangaDexCovers", client =>
+{
+    client.BaseAddress = new Uri(mangaDexOptions.CoversBaseAddress, UriKind.Absolute);
+    client.Timeout = TimeSpan.FromSeconds(mangaDexOptions.TimeoutSeconds);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(mangaDexOptions.UserAgent);
+});
 builder.Services.AddTransient<ICatalogProvider, MangaDexCatalogProvider>();
 builder.Services.AddTransient<IChapterProvider, MangaDexChapterProvider>();
 builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();

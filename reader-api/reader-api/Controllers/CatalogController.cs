@@ -13,8 +13,12 @@ public sealed class CatalogController(
     SearchCatalogHandler searchCatalog,
     GetMangaDetailsHandler getMangaDetails,
     GetMangaChaptersHandler getMangaChapters,
-    GetChapterPagesHandler getChapterPages) : ControllerBase
+    GetChapterPagesHandler getChapterPages,
+    IHttpClientFactory httpClientFactory) : ControllerBase
 {
+    private static readonly System.Text.RegularExpressions.Regex MangaIdPattern = new("^[0-9a-fA-F-]{36}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    private static readonly System.Text.RegularExpressions.Regex CoverFileNamePattern = new("^[a-zA-Z0-9_-]+\\.(?:jpg|jpeg|png|webp|gif)$", System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
     [HttpGet("manga")]
     [ProducesResponseType<PagedResultDto<MangaSummaryDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
@@ -34,6 +38,28 @@ public sealed class CatalogController(
         await getMangaDetails.HandleAsync(new GetMangaDetailsQuery(ExternalCatalogProvider.MangaDex, mangaId), cancellationToken) is { } details
             ? Ok(details)
             : NotFound(new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "The manga was not found in the external catalog." });
+
+    [HttpGet("covers/{mangaId}/{fileName}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetCover(string mangaId, string fileName, CancellationToken cancellationToken)
+    {
+        if (!MangaIdPattern.IsMatch(mangaId) || !CoverFileNamePattern.IsMatch(fileName))
+        {
+            return NotFound();
+        }
+
+        using var response = await httpClientFactory.CreateClient("MangaDexCovers")
+            .GetAsync($"covers/{mangaId}/{fileName}", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return NotFound();
+        }
+
+        var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+        Response.Headers.CacheControl = "public,max-age=86400";
+        return File(content, response.Content.Headers.ContentType?.ToString() ?? "image/jpeg");
+    }
 
     [HttpGet("manga/{mangaId}/chapters")]
     [ProducesResponseType<PagedResultDto<ChapterSummaryDto>>(StatusCodes.Status200OK)]

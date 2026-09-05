@@ -64,13 +64,32 @@ function setStatus(text) {
   el.hidden = !text;
 }
 
+function coverUrl(url) {
+  if (!url) return '';
+
+  try {
+    const source = new URL(url);
+    const segments = source.pathname.split('/').filter(Boolean);
+    if (
+      source.protocol === 'https:' &&
+      source.hostname === 'uploads.mangadex.org' &&
+      segments.length === 3 &&
+      segments[0] === 'covers'
+    ) {
+      return `${API_URL}/api/catalog/covers/${encodeURIComponent(segments[1])}/${encodeURIComponent(segments[2])}`;
+    }
+  } catch { /* use the original URL when it cannot be parsed */ }
+
+  return url;
+}
+
 function coverCard(item, { onOpen, showFav = false }) {
   const card = document.createElement('button');
   card.className = 'card';
   card.type = 'button';
-  const coverUrl = item.coverUrl || '';
+  const sourceCoverUrl = coverUrl(item.coverUrl);
   card.innerHTML = `
-    ${coverUrl ? `<img class="card-cover" src="${coverUrl}" alt="" loading="lazy" />` : `<div class="card-cover"></div>`}
+    ${sourceCoverUrl ? `<img class="card-cover" src="${sourceCoverUrl}" alt="" loading="lazy" />` : `<div class="card-cover"></div>`}
     <div class="card-body">
       <p class="card-title"></p>
       <p class="card-meta">${item.originalLanguage || ''}${showFav && item.isFavorite ? ' · <span class="card-fav">★</span>' : ''}</p>
@@ -215,7 +234,7 @@ async function openDetail(mangaId) {
 
     state.detail = { manga, chapters: chapters.items, inLibrary, isFavorite, mangaId };
 
-    $('detail-cover').src = manga.coverUrl || '';
+    $('detail-cover').src = coverUrl(manga.coverUrl);
     $('detail-title').textContent = manga.title;
     $('detail-meta').textContent = [manga.originalLanguage, PROVIDER].filter(Boolean).join(' · ');
     $('detail-desc').textContent = manga.description || 'Sem descrição.';
