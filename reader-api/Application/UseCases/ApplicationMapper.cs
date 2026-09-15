@@ -15,7 +15,7 @@ internal static class ApplicationMapper
     public static ChapterReference ToDomain(ChapterReferenceDto chapter) => new(
         ToExternalId(chapter.Provider, chapter.ExternalId), chapter.Language, chapter.Title, chapter.Volume, chapter.Number);
 
-    public static UserProfileDto ToDto(User user) => new(user.Id, user.ExternalSubject, user.DisplayName, user.CreatedAt, user.UpdatedAt);
+    public static UserProfileDto ToDto(User user) => new(user.Id, user.Email, user.DisplayName, user.CreatedAt, user.UpdatedAt);
 
     public static MangaReferenceDto ToDto(MangaReference manga) => new(manga.Id.Provider, manga.Id.Value, manga.Title, manga.CoverUrl, manga.OriginalLanguage);
 

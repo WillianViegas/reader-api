@@ -11,6 +11,9 @@ public interface IUserRepository
 
     Task<User?> GetByExternalSubjectAsync(string externalSubject, CancellationToken cancellationToken = default);
 
+    Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+        GetByExternalSubjectAsync(email, cancellationToken);
+
     Task AddAsync(User user, CancellationToken cancellationToken = default);
 }
 

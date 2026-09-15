@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Identity;
-using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using Reader.Api.Application.Ports;
 using Reader.Api.Application.UseCases;
+using Reader.Api.Domain.Entities;
 
 namespace reader_api.Authentication;
 
@@ -39,31 +39,55 @@ public sealed class JwtOptions
     }
 }
 
-public sealed class LocalCredentialStore
+public sealed class UserAuthenticationService(IUserRepository users, IUnitOfWork unitOfWork, IClock clock)
 {
-    private readonly ConcurrentDictionary<string, string> passwordHashes = new(StringComparer.OrdinalIgnoreCase);
     private readonly PasswordHasher<string> passwordHasher = new();
 
-    public LocalCredentialStore(JwtOptions options)
-    {
-        var email = NormalizeEmail(options.Email);
-        passwordHashes[email] = passwordHasher.HashPassword(email, options.Password);
-    }
-
-    public bool Register(string email, string password)
+    public async Task<User> RegisterAsync(string email, string password, string displayName, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = NormalizeEmail(email);
-        return passwordHashes.TryAdd(normalizedEmail, passwordHasher.HashPassword(normalizedEmail, password));
+        ValidatePassword(password);
+        if (await users.GetByEmailAsync(normalizedEmail, cancellationToken) is not null)
+        {
+            throw new InvalidOperationException("An account with this email already exists.");
+        }
+
+        var user = new User(Guid.NewGuid(), normalizedEmail, displayName, passwordHasher.HashPassword(normalizedEmail, password), clock.UtcNow);
+        await users.AddAsync(user, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        return user;
     }
 
-    public bool IsValid(string email, string password)
+    public async Task<User?> AuthenticateAsync(string email, string password, CancellationToken cancellationToken = default)
     {
         var normalizedEmail = NormalizeEmail(email);
-        return passwordHashes.TryGetValue(normalizedEmail, out var passwordHash) &&
-            passwordHasher.VerifyHashedPassword(normalizedEmail, passwordHash, password) != PasswordVerificationResult.Failed;
+        var user = await users.GetByEmailAsync(normalizedEmail, cancellationToken);
+        if (user is null || passwordHasher.VerifyHashedPassword(normalizedEmail, user.PasswordHash, password) == PasswordVerificationResult.Failed)
+        {
+            return null;
+        }
+
+        return user;
     }
 
-    private static string NormalizeEmail(string email)
+    public async Task EnsureDevelopmentUserAsync(string email, string password, CancellationToken cancellationToken = default)
+    {
+        var normalizedEmail = NormalizeEmail(email);
+        var existing = await users.GetByEmailAsync(normalizedEmail, cancellationToken);
+        if (existing is null)
+        {
+            await RegisterAsync(normalizedEmail, password, normalizedEmail, cancellationToken);
+            return;
+        }
+
+        if (existing.PasswordHash == "legacy-external-identity" || string.IsNullOrWhiteSpace(existing.PasswordHash))
+        {
+            existing.SetPasswordHash(passwordHasher.HashPassword(normalizedEmail, password));
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    public static string NormalizeEmail(string email)
     {
         if (string.IsNullOrWhiteSpace(email) || !System.Net.Mail.MailAddress.TryCreate(email.Trim(), out var address))
         {
@@ -72,17 +96,40 @@ public sealed class LocalCredentialStore
 
         return address.Address.ToLowerInvariant();
     }
+
+    private static void ValidatePassword(string password)
+    {
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
+        {
+            throw new ArgumentException("The password must contain at least 8 characters.", nameof(password));
+        }
+    }
 }
 
 public sealed class JwtTokenService(JwtOptions options, IClock clock)
 {
+    public string Create(User user) => Create(user.Email, user.DisplayName, user.Id);
+
     public string Create(string email)
+        => Create(email, email, null);
+
+    private string Create(string email, string displayName, Guid? userId)
     {
         var now = clock.UtcNow;
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Email, email),
+            new(ClaimTypes.Name, displayName)
+        };
+        if (userId.HasValue)
+        {
+            claims.Add(new Claim(ReaderClaimTypes.UserId, userId.Value.ToString("D")));
+        }
+
         var token = new JwtSecurityToken(
             options.Issuer,
             options.Audience,
-            [new Claim(ClaimTypes.Email, email), new Claim(ClaimTypes.Name, email)],
+            claims,
             now.UtcDateTime,
             now.AddMinutes(options.LifetimeMinutes).UtcDateTime,
             new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.SigningKey)), SecurityAlgorithms.HmacSha256));

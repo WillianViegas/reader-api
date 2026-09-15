@@ -1,8 +1,13 @@
 using Reader.Api.Domain.Enums;
+using System.Text.Json.Serialization;
 
 namespace Reader.Api.Application.Dtos;
 
-public sealed record UserProfileDto(Guid Id, string ExternalSubject, string DisplayName, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+public sealed record UserProfileDto(Guid Id, string Email, string DisplayName, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
+{
+	[JsonIgnore]
+	public string ExternalSubject => Email;
+}
 
 public sealed record MangaReferenceDto(ExternalCatalogProvider Provider, string ExternalId, string Title, string? CoverUrl, string? OriginalLanguage);
 

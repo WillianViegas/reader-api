@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Reader.Api.Infrastructure.DatabaseConfig;
@@ -11,9 +12,11 @@ using Reader.Api.Infrastructure.DatabaseConfig;
 namespace Reader.Api.Infrastructure.Migrations
 {
     [DbContext(typeof(ReaderDbContext))]
-    partial class ReaderDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260915010734_EmailPasswordAuthentication")]
+    partial class EmailPasswordAuthentication
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

@@ -79,7 +79,7 @@ builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddScoped<AuthenticateUserHandler>();
 builder.Services.AddScoped<RegisterUserHandler>();
 builder.Services.AddSingleton(jwtOptions);
-builder.Services.AddSingleton<LocalCredentialStore>();
+builder.Services.AddScoped<UserAuthenticationService>();
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<JwtUserSynchronizer>();
 builder.Services.AddScoped<GetUserProfileHandler>();
@@ -160,6 +160,13 @@ if (app.Environment.IsDevelopment())
     {
         await dbContext.Database.MigrateAsync();
     }
+    else
+    {
+        await dbContext.Database.EnsureCreatedAsync();
+    }
+
+    var authentication = scope.ServiceProvider.GetRequiredService<UserAuthenticationService>();
+    await authentication.EnsureDevelopmentUserAsync(jwtOptions.Email, jwtOptions.Password);
 }
 
 app.UseHttpsRedirection();

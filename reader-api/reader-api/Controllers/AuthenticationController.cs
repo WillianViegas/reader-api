@@ -6,19 +6,20 @@ namespace reader_api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthenticationController(LocalCredentialStore credentials, JwtTokenService tokens, RegisterUserHandler registerUser) : ControllerBase
+public sealed class AuthenticationController(UserAuthenticationService authentication, JwtTokenService tokens) : ControllerBase
 {
     [HttpPost("login")]
     [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public ActionResult<LoginResponse> Login(LoginRequest request)
+    public async Task<ActionResult<LoginResponse>> Login(LoginRequest request, CancellationToken cancellationToken)
     {
-        if (!credentials.IsValid(request.Email, request.Password))
+        var user = await authentication.AuthenticateAsync(request.Email, request.Password, cancellationToken);
+        if (user is null)
         {
             return Unauthorized();
         }
 
-        return Ok(new LoginResponse(tokens.Create(request.Email)));
+        return Ok(new LoginResponse(tokens.Create(user)));
     }
 
     [HttpPost("register")]
@@ -34,13 +35,12 @@ public sealed class AuthenticationController(LocalCredentialStore credentials, J
 
         try
         {
-            if (!credentials.Register(request.Email, request.Password))
-            {
-                return Conflict(new { message = "An account with this email already exists." });
-            }
-
-            await registerUser.HandleAsync(new RegisterUserCommand(request.Email, request.DisplayName), cancellationToken);
-            return Created(string.Empty, new LoginResponse(tokens.Create(request.Email)));
+            var user = await authentication.RegisterAsync(request.Email, request.Password, request.DisplayName, cancellationToken);
+            return Created(string.Empty, new LoginResponse(tokens.Create(user)));
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Conflict(new { message = exception.Message });
         }
         catch (ArgumentException exception)
         {

@@ -15,12 +15,16 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(user => user.Id)
             .ValueGeneratedNever();
 
-        builder.Property(user => user.ExternalSubject)
+        builder.Property(user => user.Email)
             .HasMaxLength(320)
             .IsRequired();
 
-        builder.HasIndex(user => user.ExternalSubject)
+        builder.HasIndex(user => user.Email)
             .IsUnique();
+
+        builder.Property(user => user.PasswordHash)
+            .HasMaxLength(500)
+            .IsRequired();
 
         builder.Property(user => user.DisplayName)
             .HasMaxLength(200)
