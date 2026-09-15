@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Reader.Api.Application.Dtos;
 using Reader.Api.Application.Ports;
@@ -13,6 +15,11 @@ namespace reader_api.Tests;
 
 public class CatalogEndpointTests
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
+
     [Fact]
     public async Task CatalogEndpoints_WithoutAToken_ArePublic()
     {
@@ -32,7 +39,7 @@ public class CatalogEndpointTests
         var client = await factory.CreateAuthenticatedClientAsync();
 
         var response = await client.GetAsync("/api/catalog/manga?title=chainsaw&pageSize=5");
-        var result = await response.Content.ReadFromJsonAsync<PagedResultDto<MangaSummaryDto>>();
+        var result = await response.Content.ReadFromJsonAsync<PagedResultDto<MangaSummaryDto>>(JsonOptions);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(result);
@@ -48,7 +55,7 @@ public class CatalogEndpointTests
         var client = await factory.CreateAuthenticatedClientAsync();
 
         var response = await client.GetAsync("/api/catalog/manga/manga-1");
-        var result = await response.Content.ReadFromJsonAsync<MangaDetailsDto>();
+        var result = await response.Content.ReadFromJsonAsync<MangaDetailsDto>(JsonOptions);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(result);
@@ -73,7 +80,7 @@ public class CatalogEndpointTests
         var client = await factory.CreateAuthenticatedClientAsync();
 
         var response = await client.GetAsync("/api/catalog/manga/manga-1/chapters");
-        var result = await response.Content.ReadFromJsonAsync<PagedResultDto<ChapterSummaryDto>>();
+        var result = await response.Content.ReadFromJsonAsync<PagedResultDto<ChapterSummaryDto>>(JsonOptions);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(result);
@@ -87,7 +94,7 @@ public class CatalogEndpointTests
         var client = await factory.CreateAuthenticatedClientAsync();
 
         var response = await client.GetAsync("/api/catalog/chapters/chapter-1/pages");
-        var result = await response.Content.ReadFromJsonAsync<ChapterPagesDto>();
+        var result = await response.Content.ReadFromJsonAsync<ChapterPagesDto>(JsonOptions);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(result);

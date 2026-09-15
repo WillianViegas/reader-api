@@ -339,6 +339,40 @@ async function openDetail(mangaId) {
 }
 
 // ---------- Leitor ----------
+async function ensureMangaInLibrary(mangaId) {
+  const detail = state.detail;
+  if (!state.token || detail?.mangaId !== mangaId || detail.inLibrary) return;
+
+  console.info('[library] Adding manga before reading', { provider: PROVIDER, externalId: mangaId });
+  await api('/api/library', {
+    method: 'POST',
+    body: {
+      manga: {
+        provider: PROVIDER,
+        externalId: detail.manga.id,
+        title: detail.manga.title,
+        coverUrl: detail.manga.coverUrl,
+        originalLanguage: detail.manga.originalLanguage,
+      },
+      isFavorite: false,
+    },
+  });
+  detail.inLibrary = true;
+  console.info('[library] Manga added before reading', { provider: PROVIDER, externalId: mangaId });
+}
+
+async function getChapterProgress(mangaId, chapterId) {
+  if (!state.token) return null;
+
+  try {
+    const progress = await api(`/api/library/${mangaId}/progress`);
+    return progress.find((item) => item.chapter.externalId === chapterId) || null;
+  } catch (error) {
+    console.error('[reader] Failed to load reading progress', { mangaId, chapterId, error });
+    return null;
+  }
+}
+
 async function openChapter(mangaId, progress, chapter) {
   show('reader');
   const chapterId = chapter?.id || progress?.chapter.externalId;
@@ -347,8 +381,10 @@ async function openChapter(mangaId, progress, chapter) {
   $('reader-counter').textContent = 'Carregando…';
 
   try {
+    await ensureMangaInLibrary(mangaId);
+    const savedProgress = chapter ? await getChapterProgress(mangaId, chapterId) : progress;
     const pages = await api(`/api/catalog/chapters/${chapterId}/pages`);
-    const startPage = !chapter && progress ? progress.currentPage - 1 : 0;
+    const startPage = savedProgress ? savedProgress.currentPage - 1 : 0;
 
     state.reader = {
       mangaId,
@@ -356,10 +392,10 @@ async function openChapter(mangaId, progress, chapter) {
       chapter: chapter || {
         provider: PROVIDER,
         externalId: chapterId,
-        language: progress?.chapter.language || 'pt-br',
-        title: progress?.chapter.title || null,
-        volume: progress?.chapter.volume || null,
-        number: progress?.chapter.number || null,
+        language: savedProgress?.chapter.language || 'pt-br',
+        title: savedProgress?.chapter.title || null,
+        volume: savedProgress?.chapter.volume || null,
+        number: savedProgress?.chapter.number || null,
       },
       pages: pages.pageUrls,
       page: Math.max(0, Math.min(startPage, pages.pageUrls.length - 1)),
@@ -398,6 +434,7 @@ async function saveProgress(markComplete) {
   const r = state.reader;
   if (!r) return;
   try {
+    console.info('[reader] Saving progress', { mangaId: r.mangaId, chapterId: r.chapterId, page: r.page + 1, pageCount: r.pages.length });
     await api(`/api/library/${r.mangaId}/progress`, {
       method: 'PUT',
       body: {
@@ -409,7 +446,10 @@ async function saveProgress(markComplete) {
     if (markComplete) {
       await api(`/api/library/${r.mangaId}/chapters/${r.chapterId}/complete`, { method: 'POST' });
     }
-  } catch { /* progresso é best-effort */ }
+    console.info('[reader] Progress saved', { mangaId: r.mangaId, chapterId: r.chapterId, completed: markComplete });
+  } catch (error) {
+    console.error('[reader] Failed to save progress', { mangaId: r.mangaId, chapterId: r.chapterId, error });
+  }
 }
 
 function nextPage() {
@@ -507,6 +547,7 @@ function bindEvents() {
     const d = state.detail;
     if (!d) return;
     try {
+      console.info('[library] Adding manga', { provider: PROVIDER, externalId: d.manga.id });
       await api('/api/library', {
         method: 'POST',
         body: {
@@ -520,8 +561,12 @@ function bindEvents() {
           isFavorite: false,
         },
       });
+      console.info('[library] Manga added', { provider: PROVIDER, externalId: d.manga.id });
       await openDetail(d.mangaId);
-    } catch (e) { alert(e.message); }
+    } catch (e) {
+      console.error('[library] Failed to add manga', { provider: PROVIDER, externalId: d.manga.id, error: e });
+      alert(e.message);
+    }
   });
   $('btn-toggle-fav').addEventListener('click', async () => {
     const d = state.detail;
@@ -537,7 +582,15 @@ function bindEvents() {
   $('reader-prev').addEventListener('click', prevPage);
   $('reader-zoom').addEventListener('click', cycleZoom);
   $('reader-back').addEventListener('click', closeReader);
-  $('reader-complete').addEventListener('click', async () => { await saveProgress(true); await closeReader(); });
+  $('reader-complete').addEventListener('click', async () => {
+    const r = state.reader;
+    if (!r) return;
+    clearTimeout(r.saveTimer);
+    await saveProgress(true);
+    state.reader = null;
+    show('shell');
+    await searchCatalog('');
+  });
 
   document.addEventListener('keydown', (e) => {
     if (state.view !== 'reader') return;

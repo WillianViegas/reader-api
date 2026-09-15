@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Reader.Api.Application.Dtos;
 using Reader.Api.Domain.Enums;
@@ -11,6 +14,10 @@ public class LibraryEndpointTests
 {
     private static readonly MangaReferenceDto Manga = new(ExternalCatalogProvider.MangaDex, "manga-1", "Manga One", null, "pt-br");
     private static readonly ChapterReferenceDto Chapter = new(ExternalCatalogProvider.MangaDex, "chapter-1", "pt-br", null, "1", "1");
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
 
     [Fact]
     public async Task LibraryEndpoints_WithoutAToken_ReturnUnauthorized()
@@ -42,34 +49,57 @@ public class LibraryEndpointTests
         Assert.Equal("application/problem+json", duplicate.Content.Headers.ContentType?.MediaType);
 
         var favorite = await client.PutAsJsonAsync("/api/library/manga-1/favorite", new SetFavoriteRequest(true));
-        Assert.True((await favorite.Content.ReadFromJsonAsync<LibraryItemDto>())!.IsFavorite);
+        Assert.True((await favorite.Content.ReadFromJsonAsync<LibraryItemDto>(JsonOptions))!.IsFavorite);
 
-        var favorites = await client.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library?favoriteOnly=true");
+        var favorites = await client.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library?favoriteOnly=true", JsonOptions);
         Assert.Single(favorites!.Items);
 
         var progressResponse = await client.PutAsJsonAsync("/api/library/manga-1/progress", new RegisterProgressRequest(Chapter, 4, 10));
-        var progress = await progressResponse.Content.ReadFromJsonAsync<ReadingProgressDto>();
+        var progress = await progressResponse.Content.ReadFromJsonAsync<ReadingProgressDto>(JsonOptions);
         Assert.Equal(4, progress!.CurrentPage);
         Assert.Null(progress.CompletedAt);
 
-        var resume = await client.GetFromJsonAsync<ContinueReadingDto>("/api/library/continue-reading");
+        var resume = await client.GetFromJsonAsync<ContinueReadingDto>("/api/library/continue-reading", JsonOptions);
         Assert.Equal("manga-1", resume!.Manga.ExternalId);
         Assert.Equal(4, resume.Progress.CurrentPage);
 
-        var progresses = await client.GetFromJsonAsync<List<ReadingProgressDto>>("/api/library/manga-1/progress");
+        var progresses = await client.GetFromJsonAsync<List<ReadingProgressDto>>("/api/library/manga-1/progress", JsonOptions);
         Assert.Single(progresses!);
 
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync("/api/library/manga-1/chapters/chapter-1/complete", null)).StatusCode);
 
-        var completed = (await client.GetFromJsonAsync<List<ReadingProgressDto>>("/api/library/manga-1/progress"))!.Single();
+        var completed = (await client.GetFromJsonAsync<List<ReadingProgressDto>>("/api/library/manga-1/progress", JsonOptions))!.Single();
         Assert.NotNull(completed.CompletedAt);
 
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync("/api/library/manga-1")).StatusCode);
 
-        var library = await client.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library");
+        var library = await client.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library", JsonOptions);
         Assert.Empty(library!.Items);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/library/manga-1/progress")).StatusCode);
     }
+
+        [Fact]
+        public async Task Add_WithTheWebClientStringEnumPayload_ReturnsCreated()
+        {
+                using var factory = CreateFactory();
+                var client = await factory.CreateAuthenticatedClientAsync();
+                const string requestBody = """
+                        {
+                            "manga": {
+                                "provider": "MangaDex",
+                                "externalId": "manga-string-provider",
+                                "title": "Manga One",
+                                "coverUrl": null,
+                                "originalLanguage": "pt-br"
+                            },
+                            "isFavorite": false
+                        }
+                        """;
+
+                var response = await client.PostAsync("/api/library", new StringContent(requestBody, Encoding.UTF8, "application/json"));
+
+                Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        }
 
     [Fact]
     public async Task LibraryFlow_IsScopedToTheAuthenticatedUser()
@@ -81,7 +111,7 @@ public class LibraryEndpointTests
         var add = await owner.PostAsJsonAsync("/api/library", new AddLibraryItemRequest(Manga));
         Assert.Equal(HttpStatusCode.Created, add.StatusCode);
 
-        var otherLibrary = await other.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library");
+        var otherLibrary = await other.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library", JsonOptions);
         Assert.Empty(otherLibrary!.Items);
         Assert.Equal(HttpStatusCode.NotFound, (await other.DeleteAsync("/api/library/manga-1")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await other.PutAsJsonAsync("/api/library/manga-1/favorite", new SetFavoriteRequest(true))).StatusCode);
