@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Reader.Api.Application.Dtos;
 using Reader.Api.Application.UseCases;
@@ -7,7 +6,6 @@ using Reader.Api.Domain.Enums;
 namespace reader_api.Controllers;
 
 [ApiController]
-// [Authorize]
 [Route("api/catalog")]
 public sealed class CatalogController(
     SearchCatalogHandler searchCatalog,

@@ -152,21 +152,23 @@ app.UseSwaggerUI(options =>
     options.SwaggerEndpoint("/openapi/v1.json", "API v1");
 });
 
-if (app.Environment.IsDevelopment())
+await using (var scope = app.Services.CreateAsyncScope())
 {
-    await using var scope = app.Services.CreateAsyncScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<ReaderDbContext>();
     if (dbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
     {
         await dbContext.Database.MigrateAsync();
     }
-    else
+    else if (app.Environment.IsDevelopment())
     {
         await dbContext.Database.EnsureCreatedAsync();
     }
 
-    var authentication = scope.ServiceProvider.GetRequiredService<UserAuthenticationService>();
-    await authentication.EnsureDevelopmentUserAsync(jwtOptions.Email, jwtOptions.Password);
+    if (app.Environment.IsDevelopment())
+    {
+        var authentication = scope.ServiceProvider.GetRequiredService<UserAuthenticationService>();
+        await authentication.EnsureDevelopmentUserAsync(jwtOptions.Email, jwtOptions.Password);
+    }
 }
 
 app.UseHttpsRedirection();
