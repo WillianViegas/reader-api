@@ -2,6 +2,13 @@ namespace Reader.Api.Domain.Entities;
 
 public sealed class User
 {
+    private User()
+    {
+        Email = null!;
+        PasswordHash = null!;
+        DisplayName = null!;
+    }
+
     public User(Guid id, string email, string displayName, string passwordHash, DateTimeOffset createdAt)
     {
         if (id == Guid.Empty)

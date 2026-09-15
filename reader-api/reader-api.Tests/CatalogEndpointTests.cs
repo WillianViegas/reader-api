@@ -14,15 +14,15 @@ namespace reader_api.Tests;
 public class CatalogEndpointTests
 {
     [Fact]
-    public async Task CatalogEndpoints_WithoutAToken_ReturnUnauthorized()
+    public async Task CatalogEndpoints_WithoutAToken_ArePublic()
     {
         using var factory = CreateFactory();
         var client = factory.CreateClient();
 
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/catalog/manga?title=chainsaw")).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/catalog/manga/some-id")).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/catalog/manga/some-id/chapters")).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/catalog/chapters/some-id/pages")).StatusCode);
+        Assert.NotEqual(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/catalog/manga?title=chainsaw")).StatusCode);
+        Assert.NotEqual(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/catalog/manga/some-id")).StatusCode);
+        Assert.NotEqual(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/catalog/manga/some-id/chapters")).StatusCode);
+        Assert.NotEqual(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/catalog/chapters/some-id/pages")).StatusCode);
     }
 
     [Fact]

@@ -62,7 +62,12 @@ public sealed class UserAuthenticationService(IUserRepository users, IUnitOfWork
     {
         var normalizedEmail = NormalizeEmail(email);
         var user = await users.GetByEmailAsync(normalizedEmail, cancellationToken);
-        if (user is null || passwordHasher.VerifyHashedPassword(normalizedEmail, user.PasswordHash, password) == PasswordVerificationResult.Failed)
+        if (user is null || string.IsNullOrWhiteSpace(user.PasswordHash) || user.PasswordHash == "legacy-external-identity")
+        {
+            return null;
+        }
+
+        if (passwordHasher.VerifyHashedPassword(normalizedEmail, user.PasswordHash, password) == PasswordVerificationResult.Failed)
         {
             return null;
         }
