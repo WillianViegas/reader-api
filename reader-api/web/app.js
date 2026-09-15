@@ -375,12 +375,13 @@ async function getChapterProgress(mangaId, chapterId) {
 
 async function openChapter(mangaId, progress, chapter) {
   show('reader');
-  const chapterId = chapter?.id || progress?.chapter.externalId;
+  const chapterId = chapter?.id || chapter?.externalId || chapter?.chapterId || progress?.chapter.externalId;
   const stage = $('reader-stage');
   $('reader-page').src = '';
   $('reader-counter').textContent = 'Carregando…';
 
   try {
+    if (!chapterId) throw new Error('O capítulo selecionado não possui identificador.');
     await ensureMangaInLibrary(mangaId);
     const savedProgress = chapter ? await getChapterProgress(mangaId, chapterId) : progress;
     const pages = await api(`/api/catalog/chapters/${chapterId}/pages`);
@@ -391,7 +392,7 @@ async function openChapter(mangaId, progress, chapter) {
       chapterId,
       chapter: chapter ? {
         provider: chapter.provider || PROVIDER,
-        externalId: chapter.id,
+        externalId: chapterId,
         language: chapter.language || 'pt-br',
         title: chapter.title || null,
         volume: chapter.volume || null,
@@ -440,8 +441,12 @@ function scheduleProgressSave() {
 async function saveProgress(markComplete) {
   const r = state.reader;
   if (!r) return;
+  if (!r.chapter.externalId) {
+    console.error('[reader] Progress not saved because the chapter identifier is missing', { mangaId: r.mangaId, chapter: r.chapter });
+    return;
+  }
   try {
-    console.info('[reader] Saving progress', { mangaId: r.mangaId, chapterId: r.chapterId, page: r.page + 1, pageCount: r.pages.length });
+    console.info('[reader] Saving progress', { mangaId: r.mangaId, chapter: r.chapter, page: r.page + 1, pageCount: r.pages.length });
     await api(`/api/library/${r.mangaId}/progress`, {
       method: 'PUT',
       body: {
