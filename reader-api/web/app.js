@@ -389,7 +389,14 @@ async function openChapter(mangaId, progress, chapter) {
     state.reader = {
       mangaId,
       chapterId,
-      chapter: chapter || {
+      chapter: chapter ? {
+        provider: chapter.provider || PROVIDER,
+        externalId: chapter.id,
+        language: chapter.language || 'pt-br',
+        title: chapter.title || null,
+        volume: chapter.volume || null,
+        number: chapter.number || null,
+      } : {
         provider: PROVIDER,
         externalId: chapterId,
         language: savedProgress?.chapter.language || 'pt-br',
@@ -471,8 +478,7 @@ async function closeReader() {
   const r = state.reader;
   if (r) { clearTimeout(r.saveTimer); await saveProgress(false); }
   state.reader = null;
-  show('shell');
-  await searchCatalog('');
+  await openDetail(r.mangaId);
 }
 
 // ---------- Eventos ----------
@@ -588,8 +594,7 @@ function bindEvents() {
     clearTimeout(r.saveTimer);
     await saveProgress(true);
     state.reader = null;
-    show('shell');
-    await searchCatalog('');
+    await openDetail(r.mangaId);
   });
 
   document.addEventListener('keydown', (e) => {
