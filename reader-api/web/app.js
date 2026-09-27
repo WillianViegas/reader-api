@@ -400,7 +400,16 @@ async function openDetail(mangaId) {
       } catch { /* ignora */ }
     }
 
-    state.detail = { manga, chapters: chapters.items, inLibrary, isFavorite, mangaId };
+    state.detail = {
+      manga,
+      chapters: chapters.items,
+      chaptersTotal: chapters.totalCount,
+      chaptersPage: chapters.page,
+      chaptersPageSize: chapters.pageSize,
+      inLibrary,
+      isFavorite,
+      mangaId,
+    };
 
     $('detail-cover').src = coverUrl(manga.coverUrl);
     $('detail-title').textContent = manga.title;
@@ -457,7 +466,7 @@ async function getChapterProgress(mangaId, chapterId) {
   }
 }
 
-async function openChapter(mangaId, progress, chapter) {
+async function openChapter(mangaId, progress, chapter, chapterSequence = null) {
   show('reader');
   const chapterId = chapter?.id || chapter?.externalId || chapter?.chapterId || progress?.chapter.externalId;
   const stage = $('reader-stage');
@@ -470,6 +479,15 @@ async function openChapter(mangaId, progress, chapter) {
     const savedProgress = chapter ? await getChapterProgress(mangaId, chapterId) : progress;
     const pages = await api(`/api/catalog/chapters/${chapterId}/pages`);
     const startPage = savedProgress ? savedProgress.currentPage - 1 : 0;
+    const detail = state.detail?.mangaId === mangaId ? state.detail : null;
+    const chapterIndex = detail?.chapters.findIndex((item) => item.id === chapterId) ?? -1;
+    const sequence = chapterSequence || (chapterIndex >= 0 ? {
+      page: detail.chaptersPage,
+      pageSize: detail.chaptersPageSize,
+      totalCount: detail.chaptersTotal,
+      chapters: detail.chapters,
+      index: chapterIndex,
+    } : null);
 
     state.reader = {
       mangaId,
@@ -491,8 +509,11 @@ async function openChapter(mangaId, progress, chapter) {
       },
       pages: pages.pageUrls,
       page: Math.max(0, Math.min(startPage, pages.pageUrls.length - 1)),
+      chapterSequence: sequence,
       zoom: 1,
       saveTimer: null,
+      transitioning: false,
+      noNextChapter: false,
     };
 
     renderPage();
@@ -512,6 +533,8 @@ function renderPage() {
   $('reader-counter').textContent = `${r.page + 1} / ${total}`;
   $('reader-progress').querySelector('span').style.width = `${((r.page + 1) / total) * 100}%`;
   stage.dataset.zoom = String(r.zoom);
+  $('reader-next').disabled = r.noNextChapter;
+  $('reader-prev').disabled = r.page <= 0;
   scheduleProgressSave();
 }
 
@@ -550,7 +573,80 @@ async function saveProgress(markComplete) {
 
 function nextPage() {
   const r = state.reader;
-  if (r && r.page < r.pages.length - 1) { r.page++; renderPage(); }
+  if (!r || r.transitioning) return;
+  if (r.page < r.pages.length - 1) {
+    r.page++;
+    renderPage();
+    return;
+  }
+
+  advanceToNextChapter(r);
+}
+
+async function findNextChapter(reader) {
+  const pageSize = reader.chapterSequence?.pageSize || 100;
+  let page = reader.chapterSequence?.page || 1;
+  let totalCount = reader.chapterSequence?.totalCount || 0;
+  let chapters = reader.chapterSequence?.chapters || null;
+  let index = reader.chapterSequence?.index ?? -1;
+  let currentChapterFound = index >= 0;
+
+  while (true) {
+    if (!chapters) {
+      const result = await api(`/api/catalog/manga/${encodeURIComponent(reader.mangaId)}/chapters?page=${page}&pageSize=${pageSize}`);
+      chapters = result.items;
+      totalCount = result.totalCount;
+      page = result.page;
+    }
+
+    if (!currentChapterFound) {
+      index = chapters.findIndex((chapter) => chapter.id === reader.chapterId);
+      currentChapterFound = index >= 0;
+    }
+    if (currentChapterFound) {
+      const language = reader.chapter.language.toLowerCase();
+      const next = chapters.slice(index + 1).find((chapter) => chapter.language.toLowerCase() === language);
+      if (next) {
+        return {
+          chapter: next,
+          sequence: { page, pageSize, totalCount, chapters, index: chapters.indexOf(next) },
+        };
+      }
+    }
+
+    if (page * pageSize >= totalCount) return null;
+    page++;
+    chapters = null;
+    index = -1;
+  }
+}
+
+async function advanceToNextChapter(reader) {
+  reader.transitioning = true;
+  clearTimeout(reader.saveTimer);
+  $('reader-next').disabled = true;
+  $('reader-prev').disabled = true;
+  $('reader-counter').textContent = 'Salvando e carregando próximo capítulo…';
+
+  try {
+    await saveProgress(false);
+    const next = await findNextChapter(reader);
+    if (!next) {
+      reader.noNextChapter = true;
+      $('reader-counter').textContent = 'Fim dos capítulos disponíveis';
+      $('reader-next').disabled = true;
+      $('reader-prev').disabled = false;
+      return;
+    }
+
+    await openChapter(reader.mangaId, null, next.chapter, next.sequence);
+  } catch (error) {
+    $('reader-counter').textContent = `Não foi possível carregar o próximo capítulo: ${error.message}`;
+    $('reader-next').disabled = false;
+    $('reader-prev').disabled = false;
+  } finally {
+    if (state.reader === reader) reader.transitioning = false;
+  }
 }
 function prevPage() {
   const r = state.reader;
