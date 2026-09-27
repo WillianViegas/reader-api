@@ -100,20 +100,36 @@ function coverUrl(url) {
   return url;
 }
 
-function coverCard(item, { onOpen, showFav = false }) {
-  const card = document.createElement('button');
+function coverCard(item, { onOpen, showFav = false, onRemove }) {
+  const card = document.createElement('article');
   card.className = 'card';
-  card.type = 'button';
   const sourceCoverUrl = coverUrl(item.coverUrl);
   const favorite = showFav && item.isFavorite ? '<p class="card-meta"><span class="card-fav">★</span></p>' : '';
-  card.innerHTML = `
+  const openButton = document.createElement('button');
+  openButton.className = 'card-open';
+  openButton.type = 'button';
+  openButton.setAttribute('aria-label', `Abrir ${item.title}`);
+  openButton.innerHTML = `
     ${sourceCoverUrl ? `<img class="card-cover" src="${sourceCoverUrl}" alt="" loading="lazy" />` : `<div class="card-cover"></div>`}
     <div class="card-body">
       <p class="card-title"></p>
       ${favorite}
     </div>`;
-  card.querySelector('.card-title').textContent = item.title;
-  card.addEventListener('click', () => onOpen(item));
+  openButton.querySelector('.card-title').textContent = item.title;
+  openButton.addEventListener('click', () => onOpen(item));
+  card.append(openButton);
+
+  if (onRemove) {
+    const removeButton = document.createElement('button');
+    removeButton.className = 'card-remove';
+    removeButton.type = 'button';
+    removeButton.textContent = '×';
+    removeButton.title = `Remover ${item.title} da biblioteca`;
+    removeButton.setAttribute('aria-label', removeButton.title);
+    removeButton.addEventListener('click', () => onRemove(item));
+    card.append(removeButton);
+  }
+
   return card;
 }
 
@@ -163,7 +179,11 @@ async function showLibrary(favoriteOnly = false) {
             originalLanguage: item.manga.originalLanguage,
             isFavorite: item.isFavorite,
           },
-          { onOpen: (m) => openDetail(m.id), showFav: true },
+          {
+            onOpen: (m) => openDetail(m.id),
+            onRemove: removeFromLibrary,
+            showFav: true,
+          },
         ),
       ),
     );
@@ -172,6 +192,18 @@ async function showLibrary(favoriteOnly = false) {
     setStatus(e.message);
     $('grid').replaceChildren();
     $('empty').hidden = true;
+  }
+}
+
+async function removeFromLibrary(manga) {
+  if (!window.confirm(`Remover "${manga.title}" da sua biblioteca?`)) return;
+
+  setStatus('Removendo da biblioteca…');
+  try {
+    await api(`/api/library/${encodeURIComponent(manga.id)}`, { method: 'DELETE' });
+    await showLibrary();
+  } catch (e) {
+    setStatus(`Não foi possível remover: ${e.message}`);
   }
 }
 
