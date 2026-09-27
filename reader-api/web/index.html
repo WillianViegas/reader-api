@@ -47,17 +47,12 @@
         <div class="topbar-search">
           <input class="field" id="search-input" type="search" placeholder="Buscar no catálogo…" autocomplete="off" />
         </div>
-        <select class="field category-filter" id="category-filter" aria-label="Filtrar por categoria">
-          <option value="">Todas as categorias</option>
-          <option value="391b0423-d847-456f-aff0-8b0cfc03066b">Ação</option>
-          <option value="87cc87cd-a395-47af-b27a-93258283bbc6">Aventura</option>
-          <option value="4d32cc48-9f00-4cca-b5a-a839f0764984">Comédia</option>
-          <option value="b9af3a63-f058-46de-a9a0-e0c13906197a">Drama</option>
-          <option value="cdc58593-87dd-415e-bbc0-2ec27bf404cc">Fantasia</option>
-          <option value="cdad7e68-1419-41dd-9de-27753074a640">Horror</option>
-          <option value="423e2eae-a7a2-4a8b-ac03-a8351462d71d">Romance</option>
-          <option value="e5301a23-ebd9-49dd-a0cb-2add944c7fe9">Slice of Life</option>
-        </select>
+        <details class="tag-filter" id="tag-filter">
+          <summary class="field" id="tag-filter-label">Todas as categorias</summary>
+          <div class="tag-filter-panel" id="tag-filter-options" aria-label="Categorias disponíveis">
+            <p class="tag-filter-status">Carregando categorias…</p>
+          </div>
+        </details>
         <nav class="topbar-nav">
           <button class="nav-btn is-active" data-view="catalog" type="button">Catálogo</button>
           <button class="nav-btn" data-view="library" type="button">Biblioteca</button>

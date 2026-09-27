@@ -94,6 +94,7 @@ builder.Services.AddScoped<GetLibraryHandler>();
 builder.Services.AddScoped<GetContinueReadingHandler>();
 builder.Services.AddScoped<GetReadingProgressHandler>();
 builder.Services.AddScoped<SearchCatalogHandler>();
+builder.Services.AddScoped<GetCatalogTagsHandler>();
 builder.Services.AddScoped<GetMangaDetailsHandler>();
 builder.Services.AddScoped<GetMangaChaptersHandler>();
 builder.Services.AddScoped<GetChapterPagesHandler>();

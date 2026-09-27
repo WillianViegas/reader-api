@@ -49,6 +49,34 @@ public class CatalogEndpointTests
     }
 
     [Fact]
+    public async Task Search_BindsRepeatedTagIds()
+    {
+        SearchCatalogQuery? capturedQuery = null;
+        using var factory = CreateFactory(stubs => stubs.SearchQueryObserved = query => capturedQuery = query);
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var response = await client.GetAsync("/api/catalog/manga?tagIds=tag-1&tagIds=tag-2");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(["tag-1", "tag-2"], capturedQuery?.TagIds);
+    }
+
+    [Fact]
+    public async Task GetTags_ReturnsCatalogTagGroupsPublicly()
+    {
+        using var factory = CreateFactory();
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/catalog/tags");
+        var tags = await response.Content.ReadFromJsonAsync<CatalogTagDto[]>(JsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var tag = Assert.Single(tags!);
+        Assert.Equal("Action", tag.Name);
+        Assert.Equal("genre", tag.Group);
+    }
+
+    [Fact]
     public async Task GetDetails_WhenTheMangaExists_ReturnsIt()
     {
         using var factory = CreateFactory();
@@ -137,9 +165,18 @@ public class CatalogEndpointTests
 
         public bool Unavailable { get; set; }
 
+        public Action<SearchCatalogQuery>? SearchQueryObserved { get; set; }
+
+        public Task<IReadOnlyList<CatalogTagDto>> GetTagsAsync(CancellationToken cancellationToken = default)
+        {
+            ThrowIfUnavailable();
+            return Task.FromResult<IReadOnlyList<CatalogTagDto>>([new("tag-1", "Action", "genre")]);
+        }
+
         public Task<PagedResultDto<MangaSummaryDto>> SearchAsync(SearchCatalogQuery query, CancellationToken cancellationToken = default)
         {
             ThrowIfUnavailable();
+            SearchQueryObserved?.Invoke(query);
             return Task.FromResult(new PagedResultDto<MangaSummaryDto>(
                 [new MangaSummaryDto(ExternalCatalogProvider.MangaDex, "manga-1", "Manga One", null, "pt-br")],
                 query.Page,

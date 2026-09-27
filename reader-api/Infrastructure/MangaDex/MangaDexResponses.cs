@@ -44,6 +44,24 @@ internal sealed class MangaDexManga
     public List<MangaDexRelationship> Relationships { get; init; } = [];
 }
 
+internal sealed class MangaDexTag
+{
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = string.Empty;
+
+    [JsonPropertyName("attributes")]
+    public MangaDexTagAttributes Attributes { get; init; } = new();
+}
+
+internal sealed class MangaDexTagAttributes
+{
+    [JsonPropertyName("name")]
+    public Dictionary<string, string> Name { get; init; } = [];
+
+    [JsonPropertyName("group")]
+    public string Group { get; init; } = string.Empty;
+}
+
 internal sealed class MangaDexMangaAttributes
 {
     [JsonPropertyName("title")]

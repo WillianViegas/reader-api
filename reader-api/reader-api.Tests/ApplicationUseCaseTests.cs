@@ -244,6 +244,9 @@ public class ApplicationUseCaseTests
 
     private sealed class FakeCatalogProvider : ICatalogProvider
     {
+        public Task<IReadOnlyList<CatalogTagDto>> GetTagsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<CatalogTagDto>>([]);
+
         public Task<MangaDetailsDto?> GetDetailsAsync(ExternalResourceId mangaId, CancellationToken cancellationToken = default) =>
             Task.FromResult<MangaDetailsDto?>(new MangaDetailsDto(mangaId.Provider, mangaId.Value, "Manga", null, "pt-br", null));
 

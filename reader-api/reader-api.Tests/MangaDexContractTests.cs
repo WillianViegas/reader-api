@@ -34,6 +34,37 @@ public class MangaDexContractTests
     }
 
     [Fact]
+    public async Task Search_SendsAllSelectedTagsUsingOrMode()
+    {
+        var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK, SearchJson));
+        var provider = new MangaDexCatalogProvider(CreateClient(handler), Options);
+        const string firstTagId = "391b0423-d847-456f-aff0-8b0cfc03066b";
+        const string secondTagId = "87cc87cd-a395-47af-b27a-93258283bbc6";
+
+        await provider.SearchAsync(new SearchCatalogQuery("chainsaw", TagIds: [firstTagId, secondTagId]));
+
+        var query = Assert.Single(handler.Requests).RequestUri!.Query;
+        Assert.Contains($"includedTags[]={firstTagId}", query);
+        Assert.Contains($"includedTags[]={secondTagId}", query);
+        Assert.Contains("includedTagsMode=OR", query);
+    }
+
+    [Fact]
+    public async Task GetTags_MapsTheMangaDexTagAndGroup()
+    {
+        const string tagsJson = """{"result":"ok","data":[{"id":"tag-1","attributes":{"name":{"en":"Action"},"group":"genre"}}],"limit":100,"offset":0,"total":1}""";
+        var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK, tagsJson));
+        var provider = new MangaDexCatalogProvider(CreateClient(handler), Options);
+
+        var tag = Assert.Single(await provider.GetTagsAsync());
+
+        Assert.Equal("tag-1", tag.Id);
+        Assert.Equal("Action", tag.Name);
+        Assert.Equal("genre", tag.Group);
+        Assert.Contains("manga/tag?limit=100", Assert.Single(handler.Requests).RequestUri!.ToString());
+    }
+
+    [Fact]
     public async Task GetDetails_MapsRecordedMangaEntity()
     {
         var provider = new MangaDexCatalogProvider(CreateClient(_ => Json(HttpStatusCode.OK, DetailsJson)), Options);

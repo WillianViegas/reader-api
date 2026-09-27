@@ -9,6 +9,7 @@ namespace reader_api.Controllers;
 [Route("api/catalog")]
 public sealed class CatalogController(
     SearchCatalogHandler searchCatalog,
+    GetCatalogTagsHandler getCatalogTags,
     GetMangaDetailsHandler getMangaDetails,
     GetMangaChaptersHandler getMangaChapters,
     GetChapterPagesHandler getChapterPages,
@@ -24,10 +25,17 @@ public sealed class CatalogController(
     public async Task<ActionResult<PagedResultDto<MangaSummaryDto>>> Search(
         [FromQuery] string? title,
         [FromQuery] string? category,
+        [FromQuery] string[]? tagIds,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default) =>
-        Ok(await searchCatalog.HandleAsync(new SearchCatalogQuery(title, page, pageSize, category), cancellationToken));
+        Ok(await searchCatalog.HandleAsync(new SearchCatalogQuery(title, page, pageSize, category, tagIds), cancellationToken));
+
+    [HttpGet("tags")]
+    [ProducesResponseType<IReadOnlyList<CatalogTagDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<IReadOnlyList<CatalogTagDto>>> GetTags(CancellationToken cancellationToken) =>
+        Ok(await getCatalogTags.HandleAsync(cancellationToken));
 
     [HttpGet("manga/{mangaId}")]
     [ProducesResponseType<MangaDetailsDto>(StatusCodes.Status200OK)]

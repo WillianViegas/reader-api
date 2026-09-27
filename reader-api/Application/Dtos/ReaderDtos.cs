@@ -13,6 +13,8 @@ public sealed record MangaReferenceDto(ExternalCatalogProvider Provider, string 
 
 public sealed record MangaSummaryDto(ExternalCatalogProvider Provider, string Id, string Title, string? CoverUrl, string? OriginalLanguage);
 
+public sealed record CatalogTagDto(string Id, string Name, string Group);
+
 public sealed record MangaDetailsDto(ExternalCatalogProvider Provider, string Id, string Title, string? CoverUrl, string? OriginalLanguage, string? Description);
 
 public sealed record ChapterReferenceDto(ExternalCatalogProvider Provider, string ExternalId, string Language, string? Title, string? Volume, string? Number);

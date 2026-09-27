@@ -74,7 +74,18 @@ body {
 }
 .topbar-brand { font-weight: 600; letter-spacing: .02em; font-size: 16px; }
 .topbar-search { flex: 1; max-width: 420px; }
-.category-filter { width: 170px; }
+.tag-filter { position: relative; flex: 0 0 190px; }
+.tag-filter > summary { cursor: pointer; list-style: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-filter > summary::-webkit-details-marker { display: none; }
+.tag-filter-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; width: min(360px, calc(100vw - 32px)); max-height: min(65vh, 520px); overflow: auto; padding: 14px; background: var(--card); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 12px 32px rgba(0,0,0,.45); }
+.tag-filter-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; margin: 0; padding: 10px 0; border: 0; border-bottom: 1px solid var(--border); }
+.tag-filter-group:first-child { padding-top: 0; }
+.tag-filter-group:last-child { border-bottom: 0; padding-bottom: 0; }
+.tag-filter-group legend { grid-column: 1 / -1; width: 100%; padding: 0 0 4px; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.tag-filter-option { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12px; cursor: pointer; }
+.tag-filter-option input { accent-color: var(--accent); margin: 0; }
+.tag-filter-option span { overflow-wrap: anywhere; }
+.tag-filter-status { margin: 0; color: var(--muted); font-size: 12px; }
 .topbar-nav { display: flex; gap: 4px; margin-left: auto; }
 .nav-btn { background: none; border: 0; color: var(--muted); font: inherit; font-size: 13px; font-weight: 500; padding: 8px 12px; cursor: pointer; border-radius: 4px; }
 .nav-btn:hover { color: var(--fg); }
@@ -155,7 +166,7 @@ body {
   .detail-body { grid-template-columns: 1fr; }
   .topbar { flex-wrap: wrap; height: auto; padding: 12px 16px; gap: 10px; }
   .topbar-search { order: 3; max-width: none; flex-basis: 100%; }
-  .category-filter { width: auto; flex: 1; }
+  .tag-filter { flex: 1; }
   .topbar-nav { margin-left: 0; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -13,7 +13,7 @@ public sealed record GetContinueReadingQuery;
 
 public sealed record GetReadingProgressQuery(ExternalCatalogProvider Provider, string MangaId);
 
-public sealed record SearchCatalogQuery(string? Title, int Page = 1, int PageSize = 20, string? Category = null);
+public sealed record SearchCatalogQuery(string? Title, int Page = 1, int PageSize = 20, string? Category = null, IReadOnlyList<string>? TagIds = null);
 
 public sealed record GetMangaDetailsQuery(ExternalCatalogProvider Provider, string MangaId);
 
@@ -147,4 +147,10 @@ public sealed class GetChapterPagesHandler(IChapterProvider chapters, ILogger<Ge
         logger?.LogInformation("Chapter pages found {Found} for {ChapterProvider}/{ChapterId}", result is not null, query.Provider, query.ChapterId);
         return result;
     }
+}
+
+public sealed class GetCatalogTagsHandler(ICatalogProvider catalog)
+{
+    public Task<IReadOnlyList<CatalogTagDto>> HandleAsync(CancellationToken cancellationToken = default) =>
+        catalog.GetTagsAsync(cancellationToken);
 }

@@ -15,7 +15,7 @@ const state = {
   view: 'auth',
   searchQuery: '',
   catalogPage: 1,
-  catalogCategory: '',
+  catalogTagIds: [],
   catalogTotal: 0,
   detail: null, // { manga, chapters, inLibrary, isFavorite }
   reader: null, // { mangaId, chapter, pages, page, zoom, saveTimer }
@@ -219,7 +219,7 @@ async function searchCatalog(query = state.searchQuery, page = 1) {
   try {
     const params = new URLSearchParams({ page: String(page), pageSize: '18' });
     if (term) params.set('title', term);
-    if (state.catalogCategory) params.set('category', state.catalogCategory);
+    for (const tagId of state.catalogTagIds) params.append('tagIds', tagId);
     const qs = `?${params}`;
     const result = await api(`/api/catalog/manga${qs}`);
     state.catalogTotal = result.totalCount;
@@ -236,6 +236,58 @@ async function searchCatalog(query = state.searchQuery, page = 1) {
     $('grid').replaceChildren();
     setPagination();
   }
+}
+
+async function loadCatalogTags() {
+  const options = $('tag-filter-options');
+  try {
+    const tags = await api('/api/catalog/tags', { auth: false });
+    const groupNames = { genre: 'Gêneros', theme: 'Temas', format: 'Formatos', content: 'Conteúdo' };
+    const groups = new Map();
+    for (const tag of tags) {
+      if (!groups.has(tag.group)) groups.set(tag.group, []);
+      groups.get(tag.group).push(tag);
+    }
+
+    options.replaceChildren();
+    for (const [group, groupTags] of groups) {
+      const section = document.createElement('fieldset');
+      section.className = 'tag-filter-group';
+      const legend = document.createElement('legend');
+      legend.textContent = groupNames[group] || group;
+      section.append(legend);
+      for (const tag of groupTags) {
+        const label = document.createElement('label');
+        label.className = 'tag-filter-option';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = tag.id;
+        checkbox.checked = state.catalogTagIds.includes(tag.id);
+        checkbox.addEventListener('change', () => {
+          state.catalogTagIds = [...options.querySelectorAll('input:checked')].map((input) => input.value);
+          updateTagFilterLabel();
+          searchCatalog(state.searchQuery, 1);
+        });
+        const name = document.createElement('span');
+        name.textContent = tag.name;
+        label.append(checkbox, name);
+        section.append(label);
+      }
+      options.append(section);
+    }
+    updateTagFilterLabel();
+  } catch {
+    options.replaceChildren();
+    const status = document.createElement('p');
+    status.className = 'tag-filter-status';
+    status.textContent = 'Não foi possível carregar as categorias.';
+    options.append(status);
+  }
+}
+
+function updateTagFilterLabel() {
+  const count = state.catalogTagIds.length;
+  $('tag-filter-label').textContent = count ? `Categorias (${count})` : 'Todas as categorias';
 }
 
 // ---------- Detalhe ----------
@@ -539,10 +591,6 @@ function bindEvents() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => searchCatalog(e.target.value, 1), 400);
   });
-  $('category-filter').addEventListener('change', (e) => {
-    state.catalogCategory = e.target.value;
-    searchCatalog(state.searchQuery, 1);
-  });
   $('page-prev').addEventListener('click', () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     searchCatalog(state.searchQuery, state.catalogPage - 1);
@@ -649,6 +697,7 @@ function authError(message) {
 async function enterApp() {
   show('shell');
   updateAuthButton();
+  await loadCatalogTags();
   await searchCatalog('');
 }
 
