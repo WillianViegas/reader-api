@@ -327,9 +327,10 @@ function languageLabel(language) {
   return new Intl.DisplayNames(['pt-BR'], { type: 'language' }).of(language) || language;
 }
 
-function renderChapterLanguages(mangaId, chapters) {
+function renderChapterLanguages(mangaId, chapters, progressItems = []) {
   const tabs = $('chapter-language-tabs');
   const chapterList = $('chapter-list');
+  const progressByChapter = new Map(progressItems.map((progress) => [progress.chapter.externalId, progress]));
   const byLanguage = new Map();
   for (const chapter of chapters) {
     const language = chapter.language || 'unknown';
@@ -350,7 +351,24 @@ function renderChapterLanguages(mangaId, chapters) {
           chapter.number ? `Cap. ${chapter.number}` : null,
           chapter.title || null,
         ].filter(Boolean).join(' — ') || chapter.id;
-        item.textContent = label;
+        const chapterLabel = document.createElement('span');
+        chapterLabel.className = 'chapter-label';
+        chapterLabel.textContent = label;
+        item.append(chapterLabel);
+
+        const progress = progressByChapter.get(chapter.id);
+        if (progress) {
+          const status = document.createElement('span');
+          status.className = progress.completedAt ? 'chapter-status is-complete' : 'chapter-status is-reading';
+          status.textContent = progress.completedAt
+            ? 'Concluído'
+            : `Lendo · ${progress.currentPage}${progress.pageCount ? `/${progress.pageCount}` : ''}`;
+          status.setAttribute('aria-label', progress.completedAt
+            ? 'Capítulo concluído'
+            : `Em leitura, página ${progress.currentPage}${progress.pageCount ? ` de ${progress.pageCount}` : ''}`);
+          item.append(status);
+        }
+
         item.addEventListener('click', () => openChapter(mangaId, null, chapter));
         return item;
       }),
@@ -392,11 +410,16 @@ async function openDetail(mangaId) {
 
     let inLibrary = false;
     let isFavorite = false;
+    let progressItems = [];
     if (state.token) {
       try {
         const lib = await api('/api/library?pageSize=100');
         const found = lib.items.find((i) => i.manga.externalId === mangaId);
-        if (found) { inLibrary = true; isFavorite = found.isFavorite; }
+        if (found) {
+          inLibrary = true;
+          isFavorite = found.isFavorite;
+          progressItems = found.progresses || [];
+        }
       } catch { /* ignora */ }
     }
 
@@ -406,6 +429,7 @@ async function openDetail(mangaId) {
       chaptersTotal: chapters.totalCount,
       chaptersPage: chapters.page,
       chaptersPageSize: chapters.pageSize,
+      progressItems,
       inLibrary,
       isFavorite,
       mangaId,
@@ -424,7 +448,7 @@ async function openDetail(mangaId) {
     favBtn.hidden = !inLibrary;
     favBtn.textContent = isFavorite ? '★ Favorito' : '☆ Favoritar';
 
-    renderChapterLanguages(mangaId, chapters.items);
+    renderChapterLanguages(mangaId, chapters.items, progressItems);
   } catch (e) {
     $('detail-title').textContent = 'Erro ao carregar';
     $('detail-desc').textContent = e.message;

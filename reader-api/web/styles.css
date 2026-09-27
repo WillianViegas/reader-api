@@ -132,6 +132,10 @@ body {
 .chapter-item { display: flex; align-items: center; justify-content: space-between; background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 12px 14px; cursor: pointer; transition: border-color .2s ease; }
 .chapter-item:hover { border-color: var(--accent); }
 .chapter-name, .chapter-item { font-size: 14px; }
+.chapter-label { min-width: 0; overflow-wrap: anywhere; }
+.chapter-status { flex: 0 0 auto; margin-left: 12px; border-radius: 3px; padding: 5px 7px; font-size: 10px; font-weight: 600; line-height: 1.2; white-space: nowrap; }
+.chapter-status.is-reading { background: rgba(179,36,31,.16); color: #f28b84; }
+.chapter-status.is-complete { background: rgba(75,145,104,.16); color: #8fd4a8; }
 .chapter-sub { font-size: 11px; color: var(--muted); }
 
 /* Reader */
@@ -184,6 +188,8 @@ body {
   .detail-actions { flex-wrap: wrap; }
   .detail-actions .btn { flex: 1 1 auto; min-height: 44px; }
   .chapter-item { min-height: 46px; padding: 10px 12px; }
+  .chapter-item { gap: 8px; }
+  .chapter-status { margin-left: 4px; padding: 5px 6px; font-size: 9px; }
   .reader-controls {
     top: auto;
     bottom: 0;
