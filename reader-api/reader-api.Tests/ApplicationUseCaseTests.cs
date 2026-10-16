@@ -256,6 +256,9 @@ public class ApplicationUseCaseTests
 
     private sealed class FakeChapterProvider : IChapterProvider
     {
+        public Task<ChapterPageImageDto?> GetPageImageAsync(ExternalResourceId chapterId, int pageIndex, CancellationToken cancellationToken = default) =>
+            Task.FromResult<ChapterPageImageDto?>(new([1, 2, 3], "image/jpeg"));
+
         public Task<PagedResultDto<ChapterSummaryDto>> GetChaptersAsync(GetMangaChaptersQuery query, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PagedResultDto<ChapterSummaryDto>([new ChapterSummaryDto(query.Provider, "chapter-1", "pt-br", null, null, null, null)], 1, 20, 1));
 

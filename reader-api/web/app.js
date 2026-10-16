@@ -725,6 +725,10 @@ function readerImagePoint(event) {
   };
 }
 
+function readerPageImageProxyUrl(reader, pageIndex) {
+  return `${API_URL.replace(/\/$/, '')}/api/catalog/chapters/${encodeURIComponent(reader.chapterId)}/pages/${pageIndex}`;
+}
+
 function updateReaderSelectionBox(point) {
   const reader = state.reader;
   if (!reader?.selectionStart) return;
@@ -762,8 +766,7 @@ async function recognizeReaderSelection(rectangle, reader) {
 
   try {
     const sourceImage = new Image();
-    sourceImage.crossOrigin = 'anonymous';
-    sourceImage.src = reader.pages[reader.page];
+    sourceImage.src = readerPageImageProxyUrl(reader, reader.page);
     await sourceImage.decode();
     if (!isCurrentRequest()) return;
 
@@ -888,8 +891,7 @@ async function runPageOcr(reader = state.reader) {
 
   try {
     const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.src = reader.pages[pageIndex];
+    image.src = readerPageImageProxyUrl(reader, pageIndex);
     await image.decode();
     if (!isCurrentRequest()) return;
 

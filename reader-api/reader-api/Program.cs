@@ -99,6 +99,7 @@ builder.Services.AddScoped<GetCatalogTagsHandler>();
 builder.Services.AddScoped<GetMangaDetailsHandler>();
 builder.Services.AddScoped<GetMangaChaptersHandler>();
 builder.Services.AddScoped<GetChapterPagesHandler>();
+builder.Services.AddScoped<GetChapterPageImageHandler>();
 builder.Services.AddScoped<SaveVocabularyTranslationHandler>();
 builder.Services.AddScoped<GetUserVocabularyHandler>();
 builder.Services.AddScoped<DeleteVocabularyTranslationHandler>();

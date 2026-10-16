@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
+using Reader.Api.Application.Dtos;
 
 namespace Reader.Api.Infrastructure.MangaDex;
 
@@ -11,6 +12,52 @@ namespace Reader.Api.Infrastructure.MangaDex;
 public sealed class MangaDexApiClient(HttpClient httpClient, ILogger<MangaDexApiClient> logger)
 {
     private static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)];
+    private const int MaximumImageSizeBytes = 25 * 1024 * 1024;
+
+    public async Task<ChapterPageImageDto?> GetImageAsync(Uri imageUri, CancellationToken cancellationToken)
+    {
+        HttpResponseMessage response;
+        try
+        {
+            response = await httpClient.GetAsync(imageUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
+        {
+            throw new ExternalCatalogUnavailableException("The manga page image is unavailable.", exception);
+        }
+
+        using (response)
+        {
+            if (response.StatusCode == HttpStatusCode.NotFound) return null;
+            try
+            {
+                response.EnsureSuccessStatusCode();
+            }
+            catch (HttpRequestException exception)
+            {
+                throw new ExternalCatalogUnavailableException("The manga page image is unavailable.", exception);
+            }
+
+            var contentType = response.Content.Headers.ContentType?.MediaType;
+            if (contentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) is not true)
+            {
+                throw new ExternalCatalogUnavailableException("The external chapter resource was not an image.");
+            }
+
+            if (response.Content.Headers.ContentLength is > MaximumImageSizeBytes)
+            {
+                throw new ExternalCatalogUnavailableException("The manga page image is too large to proxy.");
+            }
+
+            var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+            if (content.Length > MaximumImageSizeBytes)
+            {
+                throw new ExternalCatalogUnavailableException("The manga page image is too large to proxy.");
+            }
+
+            return new ChapterPageImageDto(content, contentType);
+        }
+    }
 
     public async Task<T?> GetAsync<T>(string relativeUri, int maxRetryAttempts, CancellationToken cancellationToken)
     {

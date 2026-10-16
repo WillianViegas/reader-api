@@ -149,6 +149,16 @@ public sealed class GetChapterPagesHandler(IChapterProvider chapters, ILogger<Ge
     }
 }
 
+public sealed class GetChapterPageImageHandler(IChapterProvider chapters)
+{
+    public Task<ChapterPageImageDto?> HandleAsync(
+        ExternalCatalogProvider provider,
+        string chapterId,
+        int pageIndex,
+        CancellationToken cancellationToken = default) =>
+        chapters.GetPageImageAsync(ApplicationMapper.ToExternalId(provider, chapterId), pageIndex, cancellationToken);
+}
+
 public sealed class GetCatalogTagsHandler(ICatalogProvider catalog)
 {
     public Task<IReadOnlyList<CatalogTagDto>> HandleAsync(CancellationToken cancellationToken = default) =>

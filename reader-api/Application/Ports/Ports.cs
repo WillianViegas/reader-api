@@ -69,6 +69,8 @@ public interface IChapterProvider
     Task<PagedResultDto<ChapterSummaryDto>> GetChaptersAsync(GetMangaChaptersQuery query, CancellationToken cancellationToken = default);
 
     Task<ChapterPagesDto?> GetPagesAsync(ExternalResourceId chapterId, CancellationToken cancellationToken = default);
+
+    Task<ChapterPageImageDto?> GetPageImageAsync(ExternalResourceId chapterId, int pageIndex, CancellationToken cancellationToken = default);
 }
 
 public interface IClock

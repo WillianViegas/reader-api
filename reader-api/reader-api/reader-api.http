@@ -39,3 +39,7 @@ Accept: application/json
 ### Delete a saved translation
 DELETE {{reader_api_HostAddress}}/api/vocabulary/{{savedTranslationId}}
 Authorization: Bearer {{readerToken}}
+
+### Proxy one MangaDex chapter image through the Reader API for canvas/OCR
+GET {{reader_api_HostAddress}}/api/catalog/chapters/{{chapterId}}/pages/0
+Accept: image/jpeg

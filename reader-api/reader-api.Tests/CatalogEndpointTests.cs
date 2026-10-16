@@ -131,6 +131,31 @@ public class CatalogEndpointTests
     }
 
     [Fact]
+    public async Task GetPageImage_ReturnsImageBytesFromTheReaderApiOrigin()
+    {
+        using var factory = CreateFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var response = await client.GetAsync("/api/catalog/chapters/chapter-1/pages/0");
+        var content = await response.Content.ReadAsByteArrayAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("image/jpeg", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal([1, 2, 3], content);
+    }
+
+    [Fact]
+    public async Task GetPageImage_WhenPageIndexIsUnavailable_ReturnsNotFound()
+    {
+        using var factory = CreateFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        var response = await client.GetAsync("/api/catalog/chapters/chapter-1/pages/10");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Search_WhenTheCatalogIsUnavailable_ReturnsServiceUnavailableWithProblemDetails()
     {
         using var factory = CreateFactory(catalog => catalog.Unavailable = true);
@@ -206,6 +231,12 @@ public class CatalogEndpointTests
         {
             ThrowIfUnavailable();
             return Task.FromResult<ChapterPagesDto?>(new ChapterPagesDto(chapterId.Provider, chapterId.Value, ["https://example.test/1.jpg"]));
+        }
+
+        public Task<ChapterPageImageDto?> GetPageImageAsync(ExternalResourceId chapterId, int pageIndex, CancellationToken cancellationToken = default)
+        {
+            ThrowIfUnavailable();
+            return Task.FromResult<ChapterPageImageDto?>(pageIndex == 0 ? new([1, 2, 3], "image/jpeg") : null);
         }
 
         private void ThrowIfUnavailable()

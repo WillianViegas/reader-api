@@ -118,6 +118,45 @@ public class MangaDexContractTests
     }
 
     [Fact]
+    public async Task GetPageImage_ProxiesImageFromAllowedMangaDexAtHomeHost()
+    {
+        var imageBytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var handler = new RecordingHandler(request =>
+            request.RequestUri!.Host == "api.mangadex.org"
+                ? Json(HttpStatusCode.OK, AtHomeJson)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(imageBytes)
+                    {
+                        Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg") }
+                    }
+                });
+        var provider = new MangaDexChapterProvider(CreateClient(handler), Options);
+
+        var result = await provider.GetPageImageAsync(new ExternalResourceId(ExternalCatalogProvider.MangaDex, ChapterId), 0);
+
+        Assert.NotNull(result);
+        Assert.Equal(imageBytes, result.Content);
+        Assert.Equal("image/jpeg", result.ContentType);
+        Assert.Contains("cmdxd98sb0x3yprd.mangadex.network", handler.Requests.Last().RequestUri!.Host);
+    }
+
+    [Fact]
+    public async Task GetPageImage_RejectsUntrustedAtHomeHost()
+    {
+        var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK, AtHomeJson.Replace(
+            "https://cmdxd98sb0x3yprd.mangadex.network",
+            "https://attacker.example.test",
+            StringComparison.Ordinal)));
+        var provider = new MangaDexChapterProvider(CreateClient(handler), Options);
+
+        var result = await provider.GetPageImageAsync(new ExternalResourceId(ExternalCatalogProvider.MangaDex, ChapterId), 0);
+
+        Assert.Null(result);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
     public async Task GetPages_WhenDataIsEmpty_FallsBackToDataSaver()
     {
         const string json = """{"result":"ok","baseUrl":"https://node.mangadex.network","chapter":{"hash":"abc","data":[],"dataSaver":["1-saver.jpg"]}}""";
