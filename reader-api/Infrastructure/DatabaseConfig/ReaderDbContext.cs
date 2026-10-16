@@ -9,6 +9,8 @@ public sealed class ReaderDbContext(DbContextOptions<ReaderDbContext> options) :
 
     public DbSet<LibraryItem> LibraryItems => Set<LibraryItem>();
 
+    public DbSet<SavedTranslation> SavedTranslations => Set<SavedTranslation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ReaderDbContext).Assembly);

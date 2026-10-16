@@ -4,3 +4,38 @@ GET {{reader_api_HostAddress}}/weatherforecast/
 Accept: application/json
 
 ###
+
+@readerToken = replace-with-access-token
+@savedTranslationId = replace-with-guid
+
+### Save a translation to the authenticated user's vocabulary
+POST {{reader_api_HostAddress}}/api/vocabulary
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{
+	"originalText": "Good morning, how are you?",
+	"translatedText": "Bom dia, como você está?",
+	"sourceLanguage": "en",
+	"targetLanguage": "pt-BR",
+	"contextText": "Good morning, how are you?",
+	"mangaExternalId": "manga-id",
+	"mangaTitle": "Manga title",
+	"chapterExternalId": "chapter-id",
+	"chapterTitle": "Chapter 1",
+	"pageNumber": 12
+}
+
+### List saved translations for the authenticated user
+GET {{reader_api_HostAddress}}/api/vocabulary?page=1&pageSize=50
+Authorization: Bearer {{readerToken}}
+Accept: application/json
+
+### Get a saved translation
+GET {{reader_api_HostAddress}}/api/vocabulary/{{savedTranslationId}}
+Authorization: Bearer {{readerToken}}
+Accept: application/json
+
+### Delete a saved translation
+DELETE {{reader_api_HostAddress}}/api/vocabulary/{{savedTranslationId}}
+Authorization: Bearer {{readerToken}}

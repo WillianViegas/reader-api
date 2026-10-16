@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Teste local de OCR — Reader</title>
+  <link rel="stylesheet" href="./ocr-test.css" />
+</head>
+<body>
+  <main class="test-app">
+    <header class="test-header">
+      <a class="back-link" href="./index.html" aria-label="Voltar ao Reader">Reader</a>
+      <h1>OCR local</h1>
+      <label class="language-control">
+        <span>Idioma do texto</span>
+        <select id="ocr-language">
+          <option value="eng">Inglês</option>
+          <option value="jpn">Japonês</option>
+          <option value="por">Português (OCR genérico)</option>
+          <option value="spa">Espanhol</option>
+          <option value="ita">Italiano</option>
+          <option value="fra">Francês</option>
+          <option value="deu">Alemão</option>
+          <option value="kor">Coreano</option>
+          <option value="chi_sim">Chinês simplificado</option>
+        </select>
+      </label>
+      <button class="selection-toggle" id="selection-toggle" type="button" aria-pressed="false">Selecionar balão</button>
+      <label class="file-picker">
+        <span>Escolher imagem</span>
+        <input id="image-file" type="file" accept="image/*" />
+      </label>
+    </header>
+
+    <section class="workspace" aria-label="Teste de reconhecimento de texto">
+      <div class="stage" id="ocr-stage">
+        <div class="empty-state" id="empty-state">Escolha uma página para iniciar</div>
+        <div class="image-wrap" id="image-wrap" hidden>
+          <img id="test-image" alt="Página selecionada para OCR" />
+          <div class="regions" id="ocr-regions"></div>
+          <div class="selection-box" id="selection-box" hidden></div>
+        </div>
+      </div>
+
+      <aside class="result-panel" aria-live="polite">
+        <div class="result-heading">
+          <h2>Texto reconhecido</h2>
+          <span id="result-count"></span>
+        </div>
+        <p class="status" id="ocr-status">Aguardando imagem</p>
+        <textarea class="selected-text" id="selected-text" rows="4" aria-label="Texto reconhecido editável" placeholder="Toque em uma região destacada ou selecione um balão."></textarea>
+        <div class="word-list" id="word-list"></div>
+        <section class="translation-panel" aria-label="Traduzir texto reconhecido">
+          <div class="translation-heading">
+            <h2>Tradução</h2>
+            <button class="swap-languages" id="swap-languages" type="button" aria-label="Inverter idiomas" title="Inverter idiomas">↔</button>
+          </div>
+          <div class="translation-languages">
+            <label>
+              <span>De</span>
+              <select id="source-language" aria-label="Idioma de origem">
+                <option value="en" selected>Inglês</option>
+                <option value="it">Italiano</option>
+                <option value="pt-BR">Português (Brasil)</option>
+              </select>
+            </label>
+            <label>
+              <span>Para</span>
+              <select id="target-language" aria-label="Idioma de destino">
+                <option value="en">Inglês</option>
+                <option value="it">Italiano</option>
+                <option value="pt-BR" selected>Português (Brasil)</option>
+              </select>
+            </label>
+          </div>
+          <button class="translate-button" id="translate-button" type="button">Traduzir texto</button>
+          <p class="translation-note">O trecho será enviado ao MyMemory. Uso anônimo: até 5.000 caracteres por dia.</p>
+          <p class="translation-status" id="translation-status" aria-live="polite"></p>
+          <textarea class="translation-result" id="translation-result" rows="3" aria-label="Texto traduzido" readonly placeholder="A tradução aparecerá aqui."></textarea>
+        </section>
+      </aside>
+    </section>
+  </main>
+  <script type="module" src="./ocr-test.js"></script>
+</body>
+</html>

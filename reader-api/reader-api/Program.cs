@@ -58,6 +58,7 @@ builder.Services.AddDbContext<ReaderDbContext>(options =>
         ?? "Host=localhost;Port=5432;Database=reader_api;Username=postgres;Password=postgres"));
 builder.Services.AddScoped<IUserRepository, EfUserRepository>();
 builder.Services.AddScoped<ILibraryRepository, EfLibraryRepository>();
+builder.Services.AddScoped<ISavedTranslationRepository, EfSavedTranslationRepository>();
 builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
 builder.Services.AddSingleton<IClock, SystemClock>();
 
@@ -98,6 +99,9 @@ builder.Services.AddScoped<GetCatalogTagsHandler>();
 builder.Services.AddScoped<GetMangaDetailsHandler>();
 builder.Services.AddScoped<GetMangaChaptersHandler>();
 builder.Services.AddScoped<GetChapterPagesHandler>();
+builder.Services.AddScoped<SaveVocabularyTranslationHandler>();
+builder.Services.AddScoped<GetUserVocabularyHandler>();
+builder.Services.AddScoped<DeleteVocabularyTranslationHandler>();
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

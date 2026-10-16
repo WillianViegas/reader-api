@@ -1,4 +1,5 @@
 using Reader.Api.Domain.Enums;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 namespace Reader.Api.Application.Dtos;
@@ -14,6 +15,55 @@ public sealed record MangaReferenceDto(ExternalCatalogProvider Provider, string 
 public sealed record MangaSummaryDto(ExternalCatalogProvider Provider, string Id, string Title, string? CoverUrl, string? OriginalLanguage);
 
 public sealed record CatalogTagDto(string Id, string Name, string Group);
+
+/// <summary>Request to save a translation to the current user's vocabulary.</summary>
+public sealed record SaveVocabularyTranslationRequest
+{
+	[Required, StringLength(500)]
+	public required string OriginalText { get; init; }
+
+	[Required, StringLength(2000)]
+	public required string TranslatedText { get; init; }
+
+	[Required, RegularExpression("^(en|it|pt-BR)$")]
+	public required string SourceLanguage { get; init; }
+
+	[Required, RegularExpression("^(en|it|pt-BR)$")]
+	public required string TargetLanguage { get; init; }
+
+	[StringLength(500)]
+	public string? ContextText { get; init; }
+
+	[StringLength(200)]
+	public string? MangaExternalId { get; init; }
+
+	[StringLength(500)]
+	public string? MangaTitle { get; init; }
+
+	[StringLength(200)]
+	public string? ChapterExternalId { get; init; }
+
+	[StringLength(500)]
+	public string? ChapterTitle { get; init; }
+
+	[Range(1, int.MaxValue)]
+	public int? PageNumber { get; init; }
+}
+
+/// <summary>A saved translation owned by the authenticated user.</summary>
+public sealed record SavedVocabularyTranslationDto(
+	Guid Id,
+	string OriginalText,
+	string TranslatedText,
+	string SourceLanguage,
+	string TargetLanguage,
+	string? ContextText,
+	string? MangaExternalId,
+	string? MangaTitle,
+	string? ChapterExternalId,
+	string? ChapterTitle,
+	int? PageNumber,
+	DateTimeOffset SavedAt);
 
 public sealed record MangaDetailsDto(ExternalCatalogProvider Provider, string Id, string Title, string? CoverUrl, string? OriginalLanguage, string? Description);
 

@@ -1,6 +1,9 @@
 // Reader API client + SPA. Sem dependências — consome apenas a Reader API.
 // A URL da API é configurável por ambiente via window.READER_API_URL ou meta tag.
 
+import { isSelectableOcrWord, recognizePageText, resolveOcrLanguage } from './ocr-engine.js';
+import { translateText } from './translator.js';
+
 const API_URL =
   window.READER_API_URL ||
   document.querySelector('meta[name="reader-api-url"]')?.content ||
@@ -538,7 +541,16 @@ async function openChapter(mangaId, progress, chapter, chapterSequence = null) {
       saveTimer: null,
       transitioning: false,
       noNextChapter: false,
+      ocrEnabled: false,
+      ocrCache: new Map(),
+      ocrRequestId: 0,
+      selectingOcrRegion: false,
+      selectionStart: null,
+      translationRequestId: 0,
+      ocrContextText: null,
     };
+
+    setReaderTranslationSource(state.reader.chapter.language);
 
     renderPage();
   } catch (e) {
@@ -553,13 +565,377 @@ function renderPage() {
   const stage = $('reader-stage');
   stage.scrollTop = 0;
   stage.scrollLeft = 0;
-  $('reader-page').src = r.pages[r.page];
+  const pageImage = $('reader-page');
+  const pageUrl = r.pages[r.page];
+  $('reader-ocr-overlay').replaceChildren();
+  $('reader-ocr-overlay').hidden = true;
+  $('reader-ocr-overlay').classList.remove('is-selecting');
+  $('reader-ocr-selection-box').hidden = true;
+  r.selectingOcrRegion = false;
+  r.selectionStart = null;
+  $('reader-ocr-select').setAttribute('aria-pressed', 'false');
+  $('reader-ocr-panel').hidden = true;
+  r.ocrRequestId++;
+  if (pageImage.src !== pageUrl) pageImage.src = pageUrl;
+  else if (r.ocrEnabled) requestAnimationFrame(() => runPageOcr(r));
   $('reader-counter').textContent = `${r.page + 1} / ${total}`;
   $('reader-progress').querySelector('span').style.width = `${((r.page + 1) / total) * 100}%`;
   stage.dataset.zoom = String(r.zoom);
   $('reader-next').disabled = r.noNextChapter;
   $('reader-prev').disabled = r.page <= 0;
   scheduleProgressSave();
+}
+
+function showOcrSelection(line) {
+  const reader = state.reader;
+  if (reader) {
+    reader.ocrContextText = line.text;
+  }
+  $('reader-ocr-panel').hidden = false;
+  $('reader-ocr-text').value = line.text;
+  clearReaderTranslation();
+  const words = (line.words || []).filter(isSelectableOcrWord);
+  $('reader-ocr-status').textContent = words.length
+    ? 'Toque em uma palavra confiável ou edite o texto.'
+    : 'Nenhuma palavra confiável neste trecho. Você ainda pode editar o texto.';
+  $('reader-ocr-words').replaceChildren(...words.map((word) => {
+    const button = document.createElement('button');
+    button.className = 'reader-ocr-word';
+    button.type = 'button';
+    button.textContent = word.text.trim();
+    button.addEventListener('click', () => {
+      $('reader-ocr-text').value = button.textContent;
+      clearReaderTranslation();
+      $('reader-ocr-status').textContent = 'Palavra selecionada';
+      $('reader-ocr-words').querySelectorAll('.is-selected').forEach((item) => item.classList.remove('is-selected'));
+      button.classList.add('is-selected');
+    });
+    return button;
+  }));
+}
+
+function clearReaderTranslation() {
+  const reader = state.reader;
+  if (reader) {
+    reader.translationRequestId++;
+  }
+  $('reader-ocr-translate').disabled = false;
+  $('reader-ocr-result').value = '';
+  $('reader-ocr-translation-status').textContent = '';
+  $('reader-ocr-save').hidden = true;
+  $('reader-ocr-save').disabled = false;
+  $('reader-ocr-save').textContent = 'Salvar tradução';
+}
+
+function setReaderTranslationSource(language) {
+  const normalized = (language || '').toLowerCase();
+  const source = normalized.startsWith('en') ? 'en'
+    : normalized.startsWith('it') ? 'it'
+      : normalized.startsWith('pt') ? 'pt-BR'
+        : null;
+  if (!source) return;
+
+  $('reader-ocr-source').value = source;
+  if ($('reader-ocr-target').value === source) {
+    $('reader-ocr-target').value = ['en', 'it', 'pt-BR'].find((item) => item !== source);
+  }
+  clearReaderTranslation();
+}
+
+async function translateReaderSelection() {
+  const reader = state.reader;
+  if (!reader) return;
+  const requestId = ++reader.translationRequestId;
+  const button = $('reader-ocr-translate');
+  button.disabled = true;
+  $('reader-ocr-result').value = '';
+  $('reader-ocr-translation-status').textContent = 'Traduzindo…';
+
+  try {
+    const result = await translateText(
+      $('reader-ocr-text').value,
+      $('reader-ocr-source').value,
+      $('reader-ocr-target').value,
+    );
+    if (state.reader !== reader || reader.translationRequestId !== requestId) return;
+    $('reader-ocr-result').value = result;
+    $('reader-ocr-translation-status').textContent = '';
+    $('reader-ocr-save').hidden = !state.token;
+  } catch (error) {
+    if (state.reader === reader && reader.translationRequestId === requestId) {
+      $('reader-ocr-translation-status').textContent = error.message;
+    }
+  } finally {
+    if (state.reader === reader && reader.translationRequestId === requestId) button.disabled = false;
+  }
+}
+
+async function saveReaderTranslation() {
+  const reader = state.reader;
+  if (!reader || !state.token) return;
+  const originalText = $('reader-ocr-text').value.trim();
+  const translatedText = $('reader-ocr-result').value.trim();
+  if (!originalText || !translatedText) return;
+
+  const button = $('reader-ocr-save');
+  button.disabled = true;
+  button.textContent = 'Salvando…';
+  $('reader-ocr-translation-status').textContent = '';
+  try {
+    await api('/api/vocabulary', {
+      method: 'POST',
+      body: {
+        originalText,
+        translatedText,
+        sourceLanguage: $('reader-ocr-source').value,
+        targetLanguage: $('reader-ocr-target').value,
+        contextText: reader.ocrContextText,
+        mangaExternalId: reader.mangaId,
+        mangaTitle: state.detail?.mangaId === reader.mangaId ? state.detail.manga.title : null,
+        chapterExternalId: reader.chapterId,
+        chapterTitle: reader.chapter.title,
+        pageNumber: reader.page + 1,
+      },
+    });
+    button.textContent = 'Salvo';
+    $('reader-ocr-translation-status').textContent = 'Tradução salva no seu vocabulário.';
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = 'Salvar tradução';
+    $('reader-ocr-translation-status').textContent = `Não foi possível salvar: ${error.message}`;
+  }
+}
+
+function toggleReaderRegionSelection() {
+  const reader = state.reader;
+  if (!reader) return;
+  reader.selectingOcrRegion = !reader.selectingOcrRegion;
+  $('reader-ocr-select').setAttribute('aria-pressed', String(reader.selectingOcrRegion));
+  $('reader-ocr-overlay').classList.toggle('is-selecting', reader.selectingOcrRegion);
+  $('reader-ocr-status').textContent = reader.selectingOcrRegion
+    ? 'Arraste sobre um balão ou caixa de texto.'
+    : 'Toque em um trecho reconhecido.';
+}
+
+function readerImagePoint(event) {
+  const rect = $('reader-page').getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
+    y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)),
+  };
+}
+
+function updateReaderSelectionBox(point) {
+  const reader = state.reader;
+  if (!reader?.selectionStart) return;
+  const stage = $('reader-stage');
+  const stageRect = stage.getBoundingClientRect();
+  const imageRect = $('reader-page').getBoundingClientRect();
+  const left = Math.min(reader.selectionStart.x, point.x);
+  const top = Math.min(reader.selectionStart.y, point.y);
+  const box = $('reader-ocr-selection-box');
+  box.hidden = false;
+  box.style.left = `${imageRect.left - stageRect.left + stage.scrollLeft + left}px`;
+  box.style.top = `${imageRect.top - stageRect.top + stage.scrollTop + top}px`;
+  box.style.width = `${Math.abs(point.x - reader.selectionStart.x)}px`;
+  box.style.height = `${Math.abs(point.y - reader.selectionStart.y)}px`;
+}
+
+function startReaderRegionSelection(event) {
+  const reader = state.reader;
+  if (!reader?.selectingOcrRegion || event.button > 0) return;
+  if (event.target.closest('#reader-controls, #reader-ocr-panel, #reader-ocr-toggle, .reader-nav')) return;
+
+  const imageRect = $('reader-page').getBoundingClientRect();
+  if (event.clientX < imageRect.left || event.clientX > imageRect.right || event.clientY < imageRect.top || event.clientY > imageRect.bottom) return;
+
+  event.preventDefault();
+  reader.selectionStart = { ...readerImagePoint(event), pointerId: event.pointerId };
+  $('reader-stage').setPointerCapture(event.pointerId);
+  updateReaderSelectionBox(reader.selectionStart);
+}
+
+async function recognizeReaderSelection(rectangle, reader) {
+  const requestId = ++reader.ocrRequestId;
+  const isCurrentRequest = () => state.reader === reader && reader.ocrRequestId === requestId;
+  $('reader-ocr-status').textContent = 'Reconhecendo região selecionada…';
+
+  try {
+    const sourceImage = new Image();
+    sourceImage.crossOrigin = 'anonymous';
+    sourceImage.src = reader.pages[reader.page];
+    await sourceImage.decode();
+    if (!isCurrentRequest()) return;
+
+    const displayedImage = $('reader-page');
+    const scaleX = sourceImage.naturalWidth / displayedImage.clientWidth;
+    const scaleY = sourceImage.naturalHeight / displayedImage.clientHeight;
+    const left = Math.round(rectangle.left * scaleX);
+    const top = Math.round(rectangle.top * scaleY);
+    const width = Math.round(rectangle.width * scaleX);
+    const height = Math.round(rectangle.height * scaleY);
+    if (width < 12 || height < 12) {
+      $('reader-ocr-status').textContent = 'Selecione uma região um pouco maior.';
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(sourceImage, left, top, width, height, 0, 0, width, height);
+    const crop = new Image();
+    crop.src = canvas.toDataURL('image/png');
+    await crop.decode();
+    if (!isCurrentRequest()) return;
+
+    const language = resolveOcrLanguage(reader.chapter.language);
+    const cropLines = await recognizePageText(crop, language, (message) => {
+      if (isCurrentRequest() && message.status) {
+        const progress = Number.isFinite(message.progress) ? ` ${Math.round(message.progress * 100)}%` : '';
+        $('reader-ocr-status').textContent = `${message.status}${progress}`;
+      }
+    });
+    if (!isCurrentRequest()) return;
+
+    const lines = cropLines.map((line) => ({
+      ...line,
+      bbox: {
+        x0: line.bbox.x0 + left,
+        y0: line.bbox.y0 + top,
+        x1: line.bbox.x1 + left,
+        y1: line.bbox.y1 + top,
+      },
+    }));
+    reader.ocrCache.set(`${reader.page}:${language}`, lines);
+    drawOcrRegions(reader, lines);
+    if (lines.length) {
+      showOcrSelection({ text: lines.map((line) => line.text).join('\n'), words: lines.flatMap((line) => line.words || []) });
+    }
+    $('reader-ocr-status').textContent = lines.length
+      ? 'Revise ou corrija o texto reconhecido.'
+      : 'Nenhum texto reconhecido nessa região.';
+  } catch (error) {
+    if (isCurrentRequest()) $('reader-ocr-status').textContent = `OCR indisponível: ${error.message}`;
+  }
+}
+
+function finishReaderRegionSelection(event) {
+  const reader = state.reader;
+  const start = reader?.selectionStart;
+  if (!start || event.pointerId !== start.pointerId) return;
+
+  const end = readerImagePoint(event);
+  const rectangle = {
+    left: Math.min(start.x, end.x),
+    top: Math.min(start.y, end.y),
+    width: Math.abs(end.x - start.x),
+    height: Math.abs(end.y - start.y),
+  };
+  reader.selectionStart = null;
+  $('reader-ocr-selection-box').hidden = true;
+  recognizeReaderSelection(rectangle, reader);
+}
+
+function drawOcrRegions(reader, lines) {
+  if (state.reader !== reader) return;
+  const overlay = $('reader-ocr-overlay');
+  const stage = $('reader-stage');
+  const image = $('reader-page');
+  if (!image.naturalWidth || !image.naturalHeight) return;
+
+  const stageRect = stage.getBoundingClientRect();
+  const imageRect = image.getBoundingClientRect();
+  const scaleX = imageRect.width / image.naturalWidth;
+  const scaleY = imageRect.height / image.naturalHeight;
+  overlay.replaceChildren(...lines.map((line) => {
+    const region = document.createElement('button');
+    region.className = 'reader-ocr-region';
+    region.type = 'button';
+    region.title = line.text;
+    region.setAttribute('aria-label', `Texto reconhecido: ${line.text}`);
+    region.style.left = `${imageRect.left - stageRect.left + stage.scrollLeft + line.bbox.x0 * scaleX}px`;
+    region.style.top = `${imageRect.top - stageRect.top + stage.scrollTop + line.bbox.y0 * scaleY}px`;
+    region.style.width = `${Math.max(12, (line.bbox.x1 - line.bbox.x0) * scaleX)}px`;
+    region.style.height = `${Math.max(12, (line.bbox.y1 - line.bbox.y0) * scaleY)}px`;
+    region.addEventListener('click', (event) => {
+      event.stopPropagation();
+      overlay.querySelectorAll('.is-active').forEach((item) => item.classList.remove('is-active'));
+      region.classList.add('is-active');
+      showOcrSelection(line);
+    });
+    return region;
+  }));
+  overlay.hidden = lines.length === 0;
+}
+
+async function runPageOcr(reader = state.reader) {
+  if (!reader || state.reader !== reader || !reader.ocrEnabled) return;
+  const pageIndex = reader.page;
+  const language = resolveOcrLanguage(reader.chapter.language);
+  const cacheKey = `${pageIndex}:${language}`;
+  const cached = reader.ocrCache.get(cacheKey);
+  if (cached) {
+    drawOcrRegions(reader, cached);
+    $('reader-ocr-status').textContent = cached.length ? `${cached.length} trechos encontrados.` : 'Nenhum texto reconhecido nesta página.';
+    return;
+  }
+
+  const requestId = ++reader.ocrRequestId;
+  const isCurrentRequest = () => state.reader === reader && reader.page === pageIndex && reader.ocrRequestId === requestId;
+  $('reader-ocr-status').textContent = 'Carregando OCR…';
+  $('reader-ocr-overlay').replaceChildren();
+  $('reader-ocr-overlay').hidden = true;
+
+  try {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.src = reader.pages[pageIndex];
+    await image.decode();
+    if (!isCurrentRequest()) return;
+
+    const lines = await recognizePageText(image, language, (message) => {
+      if (state.reader === reader && message.status) {
+        const progress = Number.isFinite(message.progress) ? ` ${Math.round(message.progress * 100)}%` : '';
+        $('reader-ocr-status').textContent = `${message.status}${progress}`;
+      }
+    });
+    if (!isCurrentRequest()) return;
+    reader.ocrCache.set(cacheKey, lines);
+    drawOcrRegions(reader, lines);
+    $('reader-ocr-status').textContent = lines.length
+      ? `${lines.length} trechos encontrados. Toque em um deles.`
+      : 'Nenhum texto reconhecido nesta página.';
+  } catch (error) {
+    if (isCurrentRequest()) {
+      $('reader-ocr-status').textContent = `OCR indisponível: ${error.message} Verifique a conexão e o acesso CORS à imagem.`;
+    }
+  }
+}
+
+function togglePageOcr() {
+  const reader = state.reader;
+  if (!reader) return;
+  reader.ocrEnabled = !reader.ocrEnabled;
+  const button = $('reader-ocr-toggle');
+  button.setAttribute('aria-pressed', String(reader.ocrEnabled));
+  button.textContent = reader.ocrEnabled ? 'OCR ativo' : 'OCR';
+  button.title = reader.ocrEnabled ? 'Desativar reconhecimento de texto' : 'Reconhecer texto da página';
+
+  if (reader.ocrEnabled) {
+    $('reader-ocr-panel').hidden = false;
+    $('reader-ocr-status').textContent = 'Preparando reconhecimento…';
+    runPageOcr(reader);
+  } else {
+    reader.ocrRequestId++;
+    reader.selectingOcrRegion = false;
+    reader.selectionStart = null;
+    $('reader-ocr-overlay').replaceChildren();
+    $('reader-ocr-overlay').hidden = true;
+    $('reader-ocr-overlay').classList.remove('is-selecting');
+    $('reader-ocr-select').setAttribute('aria-pressed', 'false');
+    $('reader-ocr-selection-box').hidden = true;
+    $('reader-ocr-panel').hidden = true;
+  }
 }
 
 function scheduleProgressSave() {
@@ -792,6 +1168,44 @@ function bindEvents() {
   $('reader-next').addEventListener('click', nextPage);
   $('reader-prev').addEventListener('click', prevPage);
   $('reader-zoom').addEventListener('click', cycleZoom);
+  $('reader-ocr-toggle').addEventListener('click', togglePageOcr);
+  $('reader-ocr-close').addEventListener('click', () => { $('reader-ocr-panel').hidden = true; });
+  $('reader-ocr-select').addEventListener('click', toggleReaderRegionSelection);
+  $('reader-ocr-translate').addEventListener('click', translateReaderSelection);
+  $('reader-ocr-save').addEventListener('click', saveReaderTranslation);
+  $('reader-ocr-text').addEventListener('input', clearReaderTranslation);
+  $('reader-ocr-source').addEventListener('change', clearReaderTranslation);
+  $('reader-ocr-target').addEventListener('change', clearReaderTranslation);
+  $('reader-ocr-swap').addEventListener('click', () => {
+    const source = $('reader-ocr-source');
+    const target = $('reader-ocr-target');
+    const currentSource = source.value;
+    source.value = target.value;
+    target.value = currentSource;
+    clearReaderTranslation();
+  });
+  $('reader-stage').addEventListener('pointerdown', startReaderRegionSelection);
+  $('reader-stage').addEventListener('pointermove', (event) => {
+    const reader = state.reader;
+    if (!reader?.selectionStart || event.pointerId !== reader.selectionStart.pointerId) return;
+    updateReaderSelectionBox(readerImagePoint(event));
+  });
+  $('reader-stage').addEventListener('pointerup', finishReaderRegionSelection);
+  $('reader-stage').addEventListener('pointercancel', () => {
+    if (state.reader) state.reader.selectionStart = null;
+    $('reader-ocr-selection-box').hidden = true;
+  });
+  $('reader-page').addEventListener('load', () => {
+    const reader = state.reader;
+    if (!reader?.ocrEnabled) return;
+    const language = resolveOcrLanguage(reader.chapter.language);
+    const cached = reader.ocrCache.get(`${reader.page}:${language}`);
+    if (cached) {
+      requestAnimationFrame(() => drawOcrRegions(reader, cached));
+    } else {
+      runPageOcr(reader);
+    }
+  });
   $('reader-back').addEventListener('click', closeReader);
   $('reader-complete').addEventListener('click', async () => {
     const r = state.reader;

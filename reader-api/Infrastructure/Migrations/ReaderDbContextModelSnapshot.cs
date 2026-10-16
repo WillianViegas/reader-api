@@ -73,6 +73,67 @@ namespace Reader.Api.Infrastructure.Migrations
                     b.ToTable("ReadingProgresses", (string)null);
                 });
 
+            modelBuilder.Entity("Reader.Api.Domain.Entities.SavedTranslation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ChapterExternalId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ChapterTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ContextText")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("MangaExternalId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("MangaTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("OriginalText")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("PageNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("SavedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SourceLanguage")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("TargetLanguage")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("TranslatedText")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "SavedAt");
+
+                    b.ToTable("SavedTranslations", (string)null);
+                });
+
             modelBuilder.Entity("Reader.Api.Domain.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -245,6 +306,15 @@ namespace Reader.Api.Infrastructure.Migrations
                         });
 
                     b.Navigation("Chapter")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Reader.Api.Domain.Entities.SavedTranslation", b =>
+                {
+                    b.HasOne("Reader.Api.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

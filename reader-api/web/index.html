@@ -99,7 +99,44 @@
     <section id="view-reader" class="view reader" hidden>
       <div class="reader-stage" id="reader-stage">
         <img id="reader-page" class="reader-page" alt="Página" />
+        <div class="reader-ocr-overlay" id="reader-ocr-overlay" hidden aria-label="Trechos reconhecidos"></div>
         <div class="reader-progress" id="reader-progress"><span></span></div>
+        <button class="reader-ocr-toggle" id="reader-ocr-toggle" type="button" aria-label="Reconhecer texto da página" aria-pressed="false" title="Reconhecer texto da página">OCR</button>
+        <aside class="reader-ocr-panel" id="reader-ocr-panel" hidden aria-live="polite">
+          <header class="reader-ocr-panel-header">
+            <strong>Texto reconhecido</strong>
+            <button class="reader-ocr-close" id="reader-ocr-close" type="button" aria-label="Fechar texto reconhecido">×</button>
+          </header>
+          <p class="reader-ocr-status" id="reader-ocr-status"></p>
+          <button class="reader-ocr-select" id="reader-ocr-select" type="button" aria-pressed="false">Selecionar balão</button>
+          <textarea class="reader-ocr-text" id="reader-ocr-text" rows="3" aria-label="Texto OCR editável" placeholder="Toque em um trecho ou selecione uma região."></textarea>
+          <div class="reader-ocr-words" id="reader-ocr-words"></div>
+          <section class="reader-ocr-translation" aria-label="Traduzir texto OCR">
+            <div class="reader-ocr-language-row">
+              <label>De
+                <select id="reader-ocr-source">
+                  <option value="en">Inglês</option>
+                  <option value="it">Italiano</option>
+                  <option value="pt-BR">Português (Brasil)</option>
+                </select>
+              </label>
+              <button class="reader-ocr-swap" id="reader-ocr-swap" type="button" aria-label="Inverter idiomas" title="Inverter idiomas">↔</button>
+              <label>Para
+                <select id="reader-ocr-target">
+                  <option value="en">Inglês</option>
+                  <option value="it">Italiano</option>
+                  <option value="pt-BR" selected>Português (Brasil)</option>
+                </select>
+              </label>
+            </div>
+            <button class="reader-ocr-translate" id="reader-ocr-translate" type="button">Traduzir</button>
+            <p class="reader-ocr-translation-note">O texto será enviado ao MyMemory. Limite anônimo: 5.000 caracteres por dia.</p>
+            <p class="reader-ocr-translation-status" id="reader-ocr-translation-status" aria-live="polite"></p>
+            <textarea class="reader-ocr-result" id="reader-ocr-result" rows="2" aria-label="Tradução" readonly placeholder="Tradução"></textarea>
+            <button class="reader-ocr-save" id="reader-ocr-save" type="button" hidden>Salvar tradução</button>
+          </section>
+        </aside>
+        <div class="reader-ocr-selection-box" id="reader-ocr-selection-box" hidden></div>
         <div class="reader-controls" id="reader-controls">
           <button class="reader-btn" id="reader-back" type="button">← Biblioteca</button>
           <div class="reader-controls-right">
@@ -114,6 +151,6 @@
     </section>
   </div>
 
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=20260929-ocr-translation"></script>
 </body>
 </html>

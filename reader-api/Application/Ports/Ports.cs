@@ -30,6 +30,21 @@ public interface ILibraryRepository
     Task RemoveAsync(LibraryItem item, CancellationToken cancellationToken = default);
 }
 
+public interface ISavedTranslationRepository
+{
+    Task AddAsync(SavedTranslation translation, CancellationToken cancellationToken = default);
+
+    Task<(IReadOnlyList<SavedTranslation> Items, int TotalCount)> GetByUserAsync(
+        Guid userId,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
+    Task<SavedTranslation?> GetByUserAndIdAsync(Guid userId, Guid translationId, CancellationToken cancellationToken = default);
+
+    Task RemoveAsync(SavedTranslation translation, CancellationToken cancellationToken = default);
+}
+
 public interface IUnitOfWork
 {
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
