@@ -13,7 +13,10 @@ using Reader.Api.Domain.Exceptions;
 using Reader.Api.Infrastructure.DatabaseConfig;
 using Reader.Api.Infrastructure.MangaDex;
 using Reader.Api.Infrastructure.Repositories;
+using Reader.Api.Infrastructure.S3;
 using reader_api.Authentication;
+using Amazon;
+using Amazon.S3;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -61,6 +64,24 @@ builder.Services.AddScoped<ILibraryRepository, EfLibraryRepository>();
 builder.Services.AddScoped<ISavedTranslationRepository, EfSavedTranslationRepository>();
 builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
 builder.Services.AddSingleton<IClock, SystemClock>();
+var pdfStorageOptions = builder.Configuration.GetSection(PdfStorageOptions.SectionName).Get<PdfStorageOptions>() ?? new PdfStorageOptions();
+builder.Services.AddSingleton(pdfStorageOptions);
+builder.Services.AddSingleton<IAmazonS3>(_ =>
+{
+    var s3Config = new AmazonS3Config
+    {
+        RegionEndpoint = RegionEndpoint.GetBySystemName(pdfStorageOptions.Region),
+        ForcePathStyle = true
+    };
+
+    if (!string.IsNullOrWhiteSpace(pdfStorageOptions.ServiceUrl))
+    {
+        s3Config.ServiceURL = pdfStorageOptions.ServiceUrl;
+    }
+
+    return new AmazonS3Client(s3Config);
+});
+builder.Services.AddSingleton<IPdfStorageProvider, S3PdfStorageProvider>();
 
 var mangaDexOptions = builder.Configuration.GetSection(MangaDexOptions.SectionName).Get<MangaDexOptions>() ?? new MangaDexOptions();
 builder.Services.AddSingleton(mangaDexOptions);
@@ -87,6 +108,8 @@ builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<JwtUserSynchronizer>();
 builder.Services.AddScoped<GetUserProfileHandler>();
 builder.Services.AddScoped<AddMangaToLibraryHandler>();
+builder.Services.AddScoped<AddPdfToLibraryHandler>();
+builder.Services.AddScoped<OpenLibraryPdfHandler>();
 builder.Services.AddScoped<RemoveMangaFromLibraryHandler>();
 builder.Services.AddScoped<SetMangaFavoriteHandler>();
 builder.Services.AddScoped<RegisterReadingProgressHandler>();

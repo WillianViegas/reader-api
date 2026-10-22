@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Reader.Api.Application.Dtos;
+using Reader.Api.Application.Ports;
 using Reader.Api.Domain.Enums;
 using reader_api.Controllers;
 
@@ -118,6 +119,95 @@ public class LibraryEndpointTests
     }
 
     [Fact]
+    public async Task PdfImport_ReadsOnlyForOwnerAndRemovesStoredFileWithLibraryItem()
+    {
+        var storage = new InMemoryPdfStorageProvider();
+        using var factory = CreateFactory(storage);
+        var owner = await factory.CreateAuthenticatedClientAsync();
+
+        using var form = CreatePdfForm("My local book", "%PDF-1.7\nexample PDF content");
+        var upload = await owner.PostAsync("/api/library/pdfs", form);
+        Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
+
+        var item = await upload.Content.ReadFromJsonAsync<LibraryItemDto>(JsonOptions);
+        Assert.Equal(ExternalCatalogProvider.UploadedPdf, item!.Manga.Provider);
+        Assert.Equal("My local book", item.Manga.Title);
+        Assert.Equal($"/api/library/pdfs/{item.Manga.ExternalId}", upload.Headers.Location?.AbsolutePath);
+
+        var read = await owner.GetAsync($"/api/library/pdfs/{item.Manga.ExternalId}");
+        Assert.Equal("application/pdf", read.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("%PDF-1.7\nexample PDF content", Encoding.UTF8.GetString(await read.Content.ReadAsByteArrayAsync()));
+
+        var other = await factory.CreateAuthenticatedClientAsync("other-reader@example.test");
+        Assert.Equal(HttpStatusCode.NotFound, (await other.GetAsync($"/api/library/pdfs/{item.Manga.ExternalId}")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/library/pdfs/{item.Manga.ExternalId}")).StatusCode);
+        Assert.Empty(storage.Documents);
+    }
+
+    [Fact]
+    public async Task PdfImport_RejectsFilesWithoutPdfSignature()
+    {
+        var storage = new InMemoryPdfStorageProvider();
+        using var factory = CreateFactory(storage);
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        using var form = CreatePdfForm("Not a PDF", "plain text");
+        var response = await client.PostAsync("/api/library/pdfs", form);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Empty(storage.Documents);
+    }
+
+    [Fact]
+    public async Task PdfImport_StoresCoverAndTracksReadingProgress()
+    {
+        var storage = new InMemoryPdfStorageProvider();
+        using var factory = CreateFactory(storage);
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        using var form = CreatePdfForm("Comic", "%PDF-1.7\nbody");
+        var cover = new ByteArrayContent([0xFF, 0xD8, 0xFF, 0xE0, 0x01]);
+        cover.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+        form.Add(cover, "Cover", "cover.jpg");
+        var upload = await client.PostAsync("/api/library/pdfs", form);
+        Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
+        var item = await upload.Content.ReadFromJsonAsync<LibraryItemDto>(JsonOptions);
+        var id = item!.Manga.ExternalId;
+        Assert.Equal($"/api/library/pdfs/{id}/cover", item.Manga.CoverUrl);
+
+        var coverResponse = await client.GetAsync($"/api/library/pdfs/{id}/cover");
+        Assert.Equal("image/jpeg", coverResponse.Content.Headers.ContentType?.MediaType);
+
+        var save = await client.PutAsJsonAsync($"/api/library/pdfs/{id}/progress", new RegisterPdfProgressRequest(3, 10));
+        Assert.Equal(HttpStatusCode.OK, save.StatusCode);
+        var progress = await client.GetFromJsonAsync<List<ReadingProgressDto>>($"/api/library/pdfs/{id}/progress", JsonOptions);
+        Assert.Equal(3, Assert.Single(progress!).CurrentPage);
+
+        var resume = await client.GetFromJsonAsync<ContinueReadingDto>("/api/library/continue-reading", JsonOptions);
+        Assert.Equal(ExternalCatalogProvider.UploadedPdf, resume!.Manga.Provider);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/library/pdfs/{id}")).StatusCode);
+        Assert.Empty(storage.Covers);
+    }
+
+    [Fact]
+    public async Task PdfImport_RejectsNonJpegCover()
+    {
+        var storage = new InMemoryPdfStorageProvider();
+        using var factory = CreateFactory(storage);
+        var client = await factory.CreateAuthenticatedClientAsync();
+
+        using var form = CreatePdfForm("Comic", "%PDF-1.7\nbody");
+        form.Add(new ByteArrayContent([1, 2, 3, 4]), "Cover", "cover.jpg");
+        var response = await client.PostAsync("/api/library/pdfs", form);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(storage.Documents);
+    }
+
+    [Fact]
     public async Task RegisterProgress_WithAnInvalidPage_ReturnsBadRequestWithProblemDetails()
     {
         using var factory = CreateFactory();
@@ -132,13 +222,72 @@ public class LibraryEndpointTests
         Assert.Contains("Domain rule violation", problem);
     }
 
-    private static ReaderApiFactory CreateFactory()
+    private static MultipartFormDataContent CreatePdfForm(string title, string content)
+    {
+        var form = new MultipartFormDataContent();
+        form.Add(new StringContent(title), "Title");
+        var file = new ByteArrayContent(Encoding.UTF8.GetBytes(content));
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/pdf");
+        form.Add(file, "File", "book.pdf");
+        return form;
+    }
+
+    private static ReaderApiFactory CreateFactory(IPdfStorageProvider? pdfStorage = null)
     {
         var factory = new ReaderApiFactory();
+        if (pdfStorage is not null)
+        {
+            factory.ReplaceService(pdfStorage);
+        }
+
         _ = factory.Server;
 
         using var scope = factory.Services.CreateScope();
         scope.ServiceProvider.GetRequiredService<Reader.Api.Infrastructure.DatabaseConfig.ReaderDbContext>().Database.EnsureCreated();
         return factory;
+    }
+
+    private sealed class InMemoryPdfStorageProvider : IPdfStorageProvider
+    {
+        public Dictionary<(Guid UserId, Guid PdfId), byte[]> Documents { get; } = [];
+
+        public async Task StoreAsync(Guid userId, Guid pdfId, Stream content, CancellationToken cancellationToken = default)
+        {
+            using var buffer = new MemoryStream();
+            await content.CopyToAsync(buffer, cancellationToken);
+            Documents.Add((userId, pdfId), buffer.ToArray());
+        }
+
+        public Task<Stream?> OpenReadAsync(Guid userId, Guid pdfId, CancellationToken cancellationToken = default)
+        {
+            Stream? content = Documents.TryGetValue((userId, pdfId), out var bytes)
+                ? new MemoryStream(bytes, writable: false)
+                : null;
+            return Task.FromResult(content);
+        }
+
+        public Task DeleteAsync(Guid userId, Guid pdfId, CancellationToken cancellationToken = default)
+        {
+            Documents.Remove((userId, pdfId));
+            Covers.Remove((userId, pdfId));
+            return Task.CompletedTask;
+        }
+
+        public Dictionary<(Guid UserId, Guid PdfId), byte[]> Covers { get; } = [];
+
+        public async Task StoreCoverAsync(Guid userId, Guid pdfId, Stream content, CancellationToken cancellationToken = default)
+        {
+            using var buffer = new MemoryStream();
+            await content.CopyToAsync(buffer, cancellationToken);
+            Covers[(userId, pdfId)] = buffer.ToArray();
+        }
+
+        public Task<Stream?> OpenCoverAsync(Guid userId, Guid pdfId, CancellationToken cancellationToken = default)
+        {
+            Stream? content = Covers.TryGetValue((userId, pdfId), out var bytes)
+                ? new MemoryStream(bytes, writable: false)
+                : null;
+            return Task.FromResult(content);
+        }
     }
 }

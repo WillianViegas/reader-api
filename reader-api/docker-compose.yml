@@ -10,11 +10,18 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__ReaderDb: Host=postgres;Port=5432;Database=reader_api;Username=postgres;Password=postgres
+      PdfStorage__BucketName: ${PDF_STORAGE_BUCKET:-reader-pdfs}
+      PdfStorage__Region: ${AWS_REGION:-us-east-1}
+      PdfStorage__ServiceUrl: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
+      pdf-bucket-init:
+        condition: service_completed_successfully
 
   postgres:
     image: postgres:17-alpine
@@ -34,5 +41,43 @@ services:
       timeout: 5s
       retries: 10
 
+  localstack:
+    image: localstack/localstack:4.4.0
+    container_name: reader-api-localstack
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      PDF_STORAGE_BUCKET: ${PDF_STORAGE_BUCKET:-reader-pdfs}
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health | grep -Eq '\"s3\": \"(available|running)\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  pdf-bucket-init:
+    image: amazon/aws-cli:2.38.1
+    container_name: reader-api-pdf-bucket-init
+    environment:
+      AWS_DEFAULT_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      PDF_STORAGE_BUCKET: ${PDF_STORAGE_BUCKET:-reader-pdfs}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until aws --endpoint-url=http://localstack:4566 s3api list-buckets >/dev/null 2>&1; do sleep 2; done
+        aws --endpoint-url=http://localstack:4566 s3api head-bucket --bucket "$$PDF_STORAGE_BUCKET" >/dev/null 2>&1 \
+          || aws --endpoint-url=http://localstack:4566 s3 mb "s3://$$PDF_STORAGE_BUCKET"
+    depends_on:
+      localstack:
+        condition: service_healthy
+
 volumes:
   postgres-data:
+  localstack-data:

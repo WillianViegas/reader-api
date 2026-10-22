@@ -10,6 +10,11 @@ const API_URL =
   window.location.origin; // servido pela própria API como arquivo estático
 
 const PROVIDER = 'MangaDex';
+const PDF_PROVIDER = 'UploadedPdf';
+const PDFJS_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
+const PDFJS_WORKER_URL = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+const PDF_PAGE_TARGET_WIDTH = 1400;
+const PDF_PAGE_CACHE_RADIUS = 3;
 const ZOOM_LEVELS = [1, 1.5, 2];
 
 // ---------- Estado ----------
@@ -22,19 +27,22 @@ const state = {
   catalogTotal: 0,
   detail: null, // { manga, chapters, inLibrary, isFavorite }
   reader: null, // { mangaId, chapter, pages, page, zoom, saveTimer }
+  pdfCovers: new Map(),
 };
 
 const $ = (id) => document.getElementById(id);
 
 // ---------- API ----------
-async function api(path, { method = 'GET', body, auth = true } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+async function api(path, { method = 'GET', body, auth = true, responseType = 'json' } = {}) {
+  const isFormData = body instanceof FormData;
+  const headers = {};
+  if (body && !isFormData) headers['Content-Type'] = 'application/json';
   if (auth && state.token) headers['Authorization'] = `Bearer ${state.token}`;
 
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
   });
 
   if (res.status === 401) {
@@ -52,7 +60,7 @@ async function api(path, { method = 'GET', body, auth = true } = {}) {
     } catch { /* mantém mensagem padrão */ }
     throw new Error(message);
   }
-  return res.status === 204 ? null : res.json();
+  return responseType === 'blob' ? res.blob() : res.json();
 }
 
 // ---------- Helpers de UI ----------
@@ -66,8 +74,22 @@ function show(view) {
 
 function setStatus(text) {
   const el = $('content-status');
+  el.replaceChildren();
   el.textContent = text || '';
   el.hidden = !text;
+}
+
+function setCatalogError(error, query, page) {
+  const status = $('content-status');
+  const message = document.createElement('p');
+  message.textContent = `Não foi possível carregar o catálogo. Verifique sua conexão e tente novamente. (${error.message})`;
+  const retry = document.createElement('button');
+  retry.className = 'btn btn-ghost catalog-retry';
+  retry.type = 'button';
+  retry.textContent = 'Tentar novamente';
+  retry.addEventListener('click', () => searchCatalog(query, page));
+  status.replaceChildren(message, retry);
+  status.hidden = false;
 }
 
 function setPagination(result) {
@@ -103,24 +125,64 @@ function coverUrl(url) {
   return url;
 }
 
+function setLibraryTools(visible) {
+  $('library-toolbar').hidden = !visible;
+  if (!visible) setUploadFormOpen(false);
+}
+
+function setUploadFormOpen(open) {
+  $('pdf-upload-form').hidden = !open;
+  $('pdf-upload-toggle').setAttribute('aria-expanded', String(open));
+  if (!open) resetUploadForm();
+}
+
+function resetUploadForm() {
+  const form = $('pdf-upload-form');
+  form.reset();
+  $('pdf-file-name').textContent = 'Escolha ou arraste um arquivo PDF';
+  $('pdf-dropzone').classList.remove('has-file', 'is-dragging');
+}
+
+async function loadPdfCover(item, container) {
+  try {
+    let url = state.pdfCovers.get(item.id);
+    if (!url) {
+      const blob = await api(`/api/library/pdfs/${encodeURIComponent(item.id)}/cover`, { responseType: 'blob' });
+      url = URL.createObjectURL(blob);
+      state.pdfCovers.set(item.id, url);
+    }
+    const image = document.createElement('img');
+    image.className = 'card-cover';
+    image.alt = '';
+    image.src = url;
+    container.replaceWith(image);
+  } catch { /* mantém o placeholder quando a capa não está disponível */ }
+}
+
 function coverCard(item, { onOpen, showFav = false, onRemove }) {
   const card = document.createElement('article');
   card.className = 'card';
-  const sourceCoverUrl = coverUrl(item.coverUrl);
+  const isPdf = item.provider === PDF_PROVIDER;
+  const sourceCoverUrl = isPdf ? '' : coverUrl(item.coverUrl);
+  const placeholder = isPdf
+    ? '<div class="card-cover pdf-card-cover"><span>PDF</span></div>'
+    : '<div class="card-cover"></div>';
   const favorite = showFav && item.isFavorite ? '<p class="card-meta"><span class="card-fav">★</span></p>' : '';
   const openButton = document.createElement('button');
   openButton.className = 'card-open';
   openButton.type = 'button';
   openButton.setAttribute('aria-label', `Abrir ${item.title}`);
   openButton.innerHTML = `
-    ${sourceCoverUrl ? `<img class="card-cover" src="${sourceCoverUrl}" alt="" loading="lazy" />` : `<div class="card-cover"></div>`}
+    ${sourceCoverUrl ? `<img class="card-cover" src="${sourceCoverUrl}" alt="" loading="lazy" />` : placeholder}
     <div class="card-body">
       <p class="card-title"></p>
       ${favorite}
     </div>`;
   openButton.querySelector('.card-title').textContent = item.title;
+  openButton.title = item.title;
   openButton.addEventListener('click', () => onOpen(item));
   card.append(openButton);
+  if (isPdf && item.coverUrl && state.token) loadPdfCover(item, openButton.querySelector('.card-cover'));
 
   if (onRemove) {
     const removeButton = document.createElement('button');
@@ -161,6 +223,7 @@ function logout() {
 
 // ---------- Telas do shell ----------
 async function showLibrary(favoriteOnly = false) {
+  setLibraryTools(Boolean(state.token));
   setPagination();
   if (!state.token) {
     setStatus('Entre para ver sua biblioteca.');
@@ -176,6 +239,7 @@ async function showLibrary(favoriteOnly = false) {
       ...result.items.map((item) =>
         coverCard(
           {
+            provider: item.manga.provider,
             id: item.manga.externalId,
             title: item.manga.title,
             coverUrl: item.manga.coverUrl,
@@ -183,7 +247,7 @@ async function showLibrary(favoriteOnly = false) {
             isFavorite: item.isFavorite,
           },
           {
-            onOpen: (m) => openDetail(m.id),
+            onOpen: (m) => m.provider === PDF_PROVIDER ? openPdf(m) : openDetail(m.id),
             onRemove: removeFromLibrary,
             showFav: true,
           },
@@ -203,7 +267,10 @@ async function removeFromLibrary(manga) {
 
   setStatus('Removendo da biblioteca…');
   try {
-    await api(`/api/library/${encodeURIComponent(manga.id)}`, { method: 'DELETE' });
+    const path = manga.provider === PDF_PROVIDER
+      ? `/api/library/pdfs/${encodeURIComponent(manga.id)}`
+      : `/api/library/${encodeURIComponent(manga.id)}`;
+    await api(path, { method: 'DELETE' });
     await showLibrary();
   } catch (e) {
     setStatus(`Não foi possível remover: ${e.message}`);
@@ -211,6 +278,7 @@ async function removeFromLibrary(manga) {
 }
 
 async function showContinueReading() {
+  setLibraryTools(false);
   setPagination();
   if (!state.token) {
     setStatus('Entre para continuar lendo.');
@@ -231,12 +299,17 @@ async function showContinueReading() {
     $('grid').replaceChildren(
       coverCard(
         {
+          provider: resume.manga.provider,
           id: resume.manga.externalId,
           title: resume.manga.title,
           coverUrl: resume.manga.coverUrl,
           originalLanguage: resume.manga.originalLanguage,
         },
-        { onOpen: () => openChapter(resume.manga.externalId, resume.progress) },
+        {
+          onOpen: () => resume.manga.provider === PDF_PROVIDER
+            ? openPdf({ id: resume.manga.externalId, title: resume.manga.title }, resume.progress)
+            : openChapter(resume.manga.externalId, resume.progress),
+        },
       ),
     );
   } catch (e) {
@@ -247,6 +320,7 @@ async function showContinueReading() {
 }
 
 async function searchCatalog(query = state.searchQuery, page = 1) {
+  setLibraryTools(false);
   const term = (query || '').trim();
   state.searchQuery = term;
   state.catalogPage = page;
@@ -267,10 +341,157 @@ async function searchCatalog(query = state.searchQuery, page = 1) {
     $('empty').hidden = result.items.length > 0;
     setPagination(result);
   } catch (e) {
-    setStatus(`Catálogo indisponível: ${e.message}`);
+    setCatalogError(e, term, page);
     $('grid').replaceChildren();
+    $('empty').hidden = true;
     setPagination();
   }
+}
+
+let pdfJsPromise = null;
+function loadPdfJs() {
+  if (!pdfJsPromise) {
+    pdfJsPromise = import(PDFJS_URL)
+      .then((pdfjs) => {
+        pdfjs.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+        return pdfjs;
+      })
+      .catch(() => {
+        pdfJsPromise = null;
+        throw new Error('Não foi possível carregar o leitor de PDF. Verifique a conexão.');
+      });
+  }
+  return pdfJsPromise;
+}
+
+async function renderPdfPage(doc, pageNumber, targetWidth, quality = 0.9) {
+  const page = await doc.getPage(pageNumber);
+  try {
+    const baseWidth = page.getViewport({ scale: 1 }).width;
+    const viewport = page.getViewport({ scale: Math.min(3, targetWidth / baseWidth) });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: context, viewport }).promise;
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (!blob) throw new Error('Não foi possível renderizar a página do PDF.');
+    return blob;
+  } finally {
+    page.cleanup();
+  }
+}
+
+async function createPdfCover(file) {
+  const pdfjs = await loadPdfJs();
+  const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+  try {
+    return await renderPdfPage(doc, 1, 400, 0.8);
+  } finally {
+    doc.destroy();
+  }
+}
+
+async function getPdfProgress(pdfId) {
+  try {
+    const progress = await api(`/api/library/pdfs/${encodeURIComponent(pdfId)}/progress`);
+    return progress[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function openPdf(pdf, progress = null) {
+  setStatus('Abrindo PDF…');
+  try {
+    const [pdfjs, content, savedProgress] = await Promise.all([
+      loadPdfJs(),
+      api(`/api/library/pdfs/${encodeURIComponent(pdf.id)}`, { responseType: 'blob' }),
+      progress ? Promise.resolve(progress) : getPdfProgress(pdf.id),
+    ]);
+    const doc = await pdfjs.getDocument({ data: await content.arrayBuffer() }).promise;
+    const startPage = savedProgress ? savedProgress.currentPage - 1 : 0;
+
+    setStatus('');
+    $('reader-complete').hidden = true;
+    $('reader-page').src = '';
+    $('reader-counter').textContent = 'Carregando…';
+    show('reader');
+    state.reader = {
+      kind: 'pdf',
+      pdf: doc,
+      pageTasks: new Map(),
+      closed: false,
+      mangaId: pdf.id,
+      chapterId: pdf.id,
+      chapter: { provider: PDF_PROVIDER, externalId: pdf.id, language: 'pt-br', title: null, volume: null, number: null },
+      pages: new Array(doc.numPages).fill(null),
+      page: Math.max(0, Math.min(startPage, doc.numPages - 1)),
+      chapterSequence: null,
+      zoom: 1,
+      saveTimer: null,
+      transitioning: false,
+      noNextChapter: false,
+      ocrEnabled: false,
+      ocrCache: new Map(),
+      ocrRequestId: 0,
+      selectingOcrRegion: false,
+      selectionStart: null,
+      translationRequestId: 0,
+      ocrContextText: null,
+    };
+    setReaderTranslationSource(state.reader.chapter.language);
+    renderPage();
+  } catch (error) {
+    setStatus(`Não foi possível abrir o PDF: ${error.message}`);
+  }
+}
+
+function getPdfPageUrl(reader, index) {
+  if (reader.pages[index]) return Promise.resolve(reader.pages[index]);
+  if (!reader.pageTasks.has(index)) {
+    const task = renderPdfPage(reader.pdf, index + 1, PDF_PAGE_TARGET_WIDTH).then((blob) => {
+      const url = URL.createObjectURL(blob);
+      if (reader.closed) URL.revokeObjectURL(url);
+      else reader.pages[index] = url;
+      return url;
+    }).finally(() => reader.pageTasks.delete(index));
+    reader.pageTasks.set(index, task);
+  }
+  return reader.pageTasks.get(index);
+}
+
+async function showPdfPage(reader) {
+  const index = reader.page;
+  try {
+    const url = await getPdfPageUrl(reader, index);
+    if (state.reader !== reader || reader.page !== index) return;
+    const image = $('reader-page');
+    if (image.src !== url) image.src = url;
+    else if (reader.ocrEnabled) requestAnimationFrame(() => runPageOcr(reader));
+
+    reader.pages.forEach((pageUrl, pageIndex) => {
+      if (pageUrl && Math.abs(pageIndex - index) > PDF_PAGE_CACHE_RADIUS) {
+        URL.revokeObjectURL(pageUrl);
+        reader.pages[pageIndex] = null;
+      }
+    });
+    if (index + 1 < reader.pages.length) getPdfPageUrl(reader, index + 1).catch(() => {});
+  } catch (error) {
+    if (state.reader === reader && reader.page === index) {
+      $('reader-counter').textContent = `Erro ao renderizar a página: ${error.message}`;
+    }
+  }
+}
+
+function releasePdfReader(reader) {
+  reader.closed = true;
+  reader.pages.forEach((url) => url && URL.revokeObjectURL(url));
+  reader.pages.fill(null);
+  reader.pdf.destroy();
+  $('reader-page').src = '';
 }
 
 async function loadCatalogTags() {
@@ -311,12 +532,17 @@ async function loadCatalogTags() {
       options.append(section);
     }
     updateTagFilterLabel();
-  } catch {
+  } catch (error) {
     options.replaceChildren();
     const status = document.createElement('p');
     status.className = 'tag-filter-status';
-    status.textContent = 'Não foi possível carregar as categorias.';
-    options.append(status);
+    status.textContent = `Não foi possível carregar as categorias. (${error.message})`;
+    const retry = document.createElement('button');
+    retry.className = 'btn btn-ghost catalog-retry';
+    retry.type = 'button';
+    retry.textContent = 'Tentar novamente';
+    retry.addEventListener('click', loadCatalogTags);
+    options.append(status, retry);
   }
 }
 
@@ -495,6 +721,7 @@ async function getChapterProgress(mangaId, chapterId) {
 
 async function openChapter(mangaId, progress, chapter, chapterSequence = null) {
   show('reader');
+  $('reader-complete').hidden = false;
   const chapterId = chapter?.id || chapter?.externalId || chapter?.chapterId || progress?.chapter.externalId;
   const stage = $('reader-stage');
   $('reader-page').src = '';
@@ -576,12 +803,13 @@ function renderPage() {
   $('reader-ocr-select').setAttribute('aria-pressed', 'false');
   $('reader-ocr-panel').hidden = true;
   r.ocrRequestId++;
-  if (pageImage.src !== pageUrl) pageImage.src = pageUrl;
+  if (r.kind === 'pdf') showPdfPage(r);
+  else if (pageImage.src !== pageUrl) pageImage.src = pageUrl;
   else if (r.ocrEnabled) requestAnimationFrame(() => runPageOcr(r));
   $('reader-counter').textContent = `${r.page + 1} / ${total}`;
   $('reader-progress').querySelector('span').style.width = `${((r.page + 1) / total) * 100}%`;
   stage.dataset.zoom = String(r.zoom);
-  $('reader-next').disabled = r.noNextChapter;
+  $('reader-next').disabled = r.kind === 'pdf' ? r.page >= total - 1 : r.noNextChapter;
   $('reader-prev').disabled = r.page <= 0;
   scheduleProgressSave();
 }
@@ -726,6 +954,7 @@ function readerImagePoint(event) {
 }
 
 function readerPageImageProxyUrl(reader, pageIndex) {
+  if (reader.kind === 'pdf') return reader.pages[pageIndex];
   return `${API_URL.replace(/\/$/, '')}/api/catalog/chapters/${encodeURIComponent(reader.chapterId)}/pages/${pageIndex}`;
 }
 
@@ -955,6 +1184,13 @@ async function saveProgress(markComplete) {
     return;
   }
   try {
+    if (r.kind === 'pdf') {
+      await api(`/api/library/pdfs/${encodeURIComponent(r.mangaId)}/progress`, {
+        method: 'PUT',
+        body: { currentPage: r.page + 1, pageCount: r.pages.length },
+      });
+      return;
+    }
     console.info('[reader] Saving progress', { mangaId: r.mangaId, chapter: r.chapter, page: r.page + 1, pageCount: r.pages.length });
     await api(`/api/library/${r.mangaId}/progress`, {
       method: 'PUT',
@@ -982,6 +1218,7 @@ function nextPage() {
     return;
   }
 
+  if (r.kind === 'pdf') return;
   advanceToNextChapter(r);
 }
 
@@ -1065,6 +1302,12 @@ async function closeReader() {
   const r = state.reader;
   if (r) { clearTimeout(r.saveTimer); await saveProgress(false); }
   state.reader = null;
+  if (r?.kind === 'pdf') {
+    releasePdfReader(r);
+    show('shell');
+    await showLibrary();
+    return;
+  }
   await openDetail(r.mangaId);
 }
 
@@ -1094,6 +1337,55 @@ function bindEvents() {
       e.target.reset();
       enterApp();
     } catch (err) { authError(err.message); }
+  });
+
+  const pdfUploadForm = $('pdf-upload-form');
+  const fileInput = pdfUploadForm.elements.file;
+  const dropzone = $('pdf-dropzone');
+  const applySelectedFile = () => {
+    const file = fileInput.files[0];
+    $('pdf-file-name').textContent = file ? file.name : 'Escolha ou arraste um arquivo PDF';
+    dropzone.classList.toggle('has-file', Boolean(file));
+    if (file && !pdfUploadForm.elements.title.value.trim()) {
+      pdfUploadForm.elements.title.value = file.name.replace(/\.pdf$/i, '');
+    }
+  };
+  fileInput.addEventListener('change', applySelectedFile);
+  dropzone.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    dropzone.classList.add('is-dragging');
+  });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('is-dragging'));
+  dropzone.addEventListener('drop', (event) => {
+    event.preventDefault();
+    dropzone.classList.remove('is-dragging');
+    if (event.dataTransfer.files.length) {
+      fileInput.files = event.dataTransfer.files;
+      applySelectedFile();
+    }
+  });
+  $('pdf-upload-toggle').addEventListener('click', () => setUploadFormOpen($('pdf-upload-form').hidden));
+  $('pdf-upload-cancel').addEventListener('click', () => setUploadFormOpen(false));
+  pdfUploadForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submitButton = pdfUploadForm.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    setStatus('Importando PDF…');
+    try {
+      const body = new FormData(pdfUploadForm);
+      try {
+        body.append('Cover', await createPdfCover(fileInput.files[0]), 'cover.jpg');
+      } catch (error) {
+        console.warn('[pdf] Cover generation failed; importing without cover', error);
+      }
+      await api('/api/library/pdfs', { method: 'POST', body });
+      setUploadFormOpen(false);
+      await showLibrary();
+    } catch (error) {
+      setStatus(`Não foi possível importar o PDF: ${error.message}`);
+    } finally {
+      submitButton.disabled = false;
+    }
   });
 
   $('btn-auth').addEventListener('click', () => {
@@ -1254,6 +1546,7 @@ function switchAuthTab(isLogin) {
 function updateAuthButton() {
   const btn = $('btn-auth');
   if (btn) btn.textContent = state.token ? 'Sair' : 'Entrar';
+  if (!state.token) setLibraryTools(false);
 }
 
 function authError(message) {

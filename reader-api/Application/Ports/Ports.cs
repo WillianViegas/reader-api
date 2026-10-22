@@ -30,6 +30,20 @@ public interface ILibraryRepository
     Task RemoveAsync(LibraryItem item, CancellationToken cancellationToken = default);
 }
 
+public interface IPdfStorageProvider
+{
+    Task StoreAsync(Guid userId, Guid pdfId, Stream content, CancellationToken cancellationToken = default);
+
+    Task<Stream?> OpenReadAsync(Guid userId, Guid pdfId, CancellationToken cancellationToken = default);
+
+    Task StoreCoverAsync(Guid userId, Guid pdfId, Stream content, CancellationToken cancellationToken = default);
+
+    Task<Stream?> OpenCoverAsync(Guid userId, Guid pdfId, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes the PDF and its cover, if any.</summary>
+    Task DeleteAsync(Guid userId, Guid pdfId, CancellationToken cancellationToken = default);
+}
+
 public interface ISavedTranslationRepository
 {
     Task AddAsync(SavedTranslation translation, CancellationToken cancellationToken = default);

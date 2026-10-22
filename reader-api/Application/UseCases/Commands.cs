@@ -16,6 +16,8 @@ public sealed record AddMangaToLibraryCommand(Guid UserId, MangaReferenceDto Man
 
 public sealed record RemoveMangaFromLibraryCommand(Guid UserId, ExternalCatalogProvider Provider, string MangaId);
 
+public sealed record AddPdfToLibraryCommand(Guid UserId, string Title, Stream Content, Stream? Cover = null);
+
 public sealed record SetMangaFavoriteCommand(Guid UserId, ExternalCatalogProvider Provider, string MangaId, bool IsFavorite);
 
 public sealed record RegisterReadingProgressCommand(Guid UserId, ExternalCatalogProvider MangaProvider, string MangaId, ChapterReferenceDto Chapter, int CurrentPage, int? PageCount);
@@ -112,7 +114,8 @@ public sealed class AddMangaToLibraryHandler(
 public sealed class RemoveMangaFromLibraryHandler(
     ILibraryRepository library,
     IUnitOfWork unitOfWork,
-    ILogger<RemoveMangaFromLibraryHandler>? logger = null)
+    ILogger<RemoveMangaFromLibraryHandler>? logger = null,
+    IPdfStorageProvider? pdfStorage = null)
 {
     public async Task HandleAsync(RemoveMangaFromLibraryCommand command, CancellationToken cancellationToken = default)
     {
@@ -120,9 +123,113 @@ public sealed class RemoveMangaFromLibraryHandler(
         var item = await library.GetByUserAndMangaAsync(command.UserId, ApplicationMapper.ToExternalId(command.Provider, command.MangaId), cancellationToken)
             ?? throw new KeyNotFoundException("The manga was not found in the user's library.");
 
+        if (command.Provider == ExternalCatalogProvider.UploadedPdf)
+        {
+            if (pdfStorage is null)
+            {
+                throw new InvalidOperationException("PDF storage is not configured.");
+            }
+
+            if (!Guid.TryParse(command.MangaId, out var pdfId))
+            {
+                throw new ArgumentException("The PDF identifier is invalid.", nameof(command));
+            }
+
+            await pdfStorage.DeleteAsync(command.UserId, pdfId, cancellationToken);
+        }
+
         await library.RemoveAsync(item, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         logger?.LogInformation("Removed library item {LibraryItemId} for user {UserId}", item.Id, command.UserId);
+    }
+}
+
+public sealed class AddPdfToLibraryHandler(
+    ILibraryRepository library,
+    IUnitOfWork unitOfWork,
+    IPdfStorageProvider pdfStorage,
+    IClock clock,
+    ILogger<AddPdfToLibraryHandler>? logger = null)
+{
+    public async Task<LibraryItemDto> HandleAsync(AddPdfToLibraryCommand command, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(command.Title))
+        {
+            throw new ArgumentException("A PDF title is required.", nameof(command));
+        }
+
+        var pdfId = Guid.NewGuid();
+        await pdfStorage.StoreAsync(command.UserId, pdfId, command.Content, cancellationToken);
+
+        try
+        {
+            string? coverUrl = null;
+            if (command.Cover is not null)
+            {
+                await pdfStorage.StoreCoverAsync(command.UserId, pdfId, command.Cover, cancellationToken);
+                coverUrl = $"/api/library/pdfs/{pdfId:D}/cover";
+            }
+
+            var now = clock.UtcNow;
+            var reference = new MangaReferenceDto(
+                ExternalCatalogProvider.UploadedPdf,
+                pdfId.ToString("D"),
+                command.Title.Trim(),
+                coverUrl,
+                null);
+            var item = new LibraryItem(
+                Guid.NewGuid(),
+                command.UserId,
+                ApplicationMapper.ToDomain(reference, now),
+                false,
+                now);
+
+            await library.AddAsync(item, cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            logger?.LogInformation("Added uploaded PDF {PdfId} to library for user {UserId}", pdfId, command.UserId);
+            return ApplicationMapper.ToDto(item);
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                await pdfStorage.DeleteAsync(command.UserId, pdfId, CancellationToken.None);
+            }
+            catch (Exception cleanupException)
+            {
+                logger?.LogError(cleanupException, "Failed to remove PDF {PdfId} after library import failed", pdfId);
+            }
+
+            logger?.LogError(exception, "Failed to persist uploaded PDF {PdfId} for user {UserId}", pdfId, command.UserId);
+            throw;
+        }
+    }
+}
+
+public sealed class OpenLibraryPdfHandler(ILibraryRepository library, IPdfStorageProvider pdfStorage)
+{
+    public async Task<Stream> HandleAsync(Guid userId, Guid pdfId, CancellationToken cancellationToken = default)
+    {
+        var item = await library.GetByUserAndMangaAsync(
+            userId,
+            ApplicationMapper.ToExternalId(ExternalCatalogProvider.UploadedPdf, pdfId.ToString("D")),
+            cancellationToken)
+            ?? throw new KeyNotFoundException("The PDF was not found in the user's library.");
+
+        return await pdfStorage.OpenReadAsync(userId, pdfId, cancellationToken)
+            ?? throw new KeyNotFoundException("The PDF file was not found in storage.");
+    }
+
+    public async Task<Stream> HandleCoverAsync(Guid userId, Guid pdfId, CancellationToken cancellationToken = default)
+    {
+        _ = await library.GetByUserAndMangaAsync(
+            userId,
+            ApplicationMapper.ToExternalId(ExternalCatalogProvider.UploadedPdf, pdfId.ToString("D")),
+            cancellationToken)
+            ?? throw new KeyNotFoundException("The PDF was not found in the user's library.");
+
+        return await pdfStorage.OpenCoverAsync(userId, pdfId, cancellationToken)
+            ?? throw new KeyNotFoundException("The PDF cover was not found in storage.");
     }
 }
 

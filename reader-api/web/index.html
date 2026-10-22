@@ -63,6 +63,27 @@
 
       <main class="content">
         <div class="content-status" id="content-status" hidden></div>
+        <div class="library-toolbar" id="library-toolbar" hidden>
+          <h2 class="library-heading">Minha biblioteca</h2>
+          <button class="btn btn-primary" id="pdf-upload-toggle" type="button" aria-expanded="false" aria-controls="pdf-upload-form">+ Importar PDF</button>
+        </div>
+        <form class="pdf-upload" id="pdf-upload-form" hidden>
+          <label class="pdf-dropzone" id="pdf-dropzone">
+            <input class="pdf-file-input" type="file" name="file" accept="application/pdf,.pdf" required />
+            <span class="pdf-dropzone-icon" aria-hidden="true">PDF</span>
+            <span class="pdf-dropzone-text">
+              <strong id="pdf-file-name">Escolha ou arraste um arquivo PDF</strong>
+              <small>Livros, mangás ou HQs · até 100 MB</small>
+            </span>
+          </label>
+          <label class="pdf-upload-title">Título
+            <input class="field" type="text" name="title" maxlength="500" placeholder="Título do livro, mangá ou HQ" required />
+          </label>
+          <div class="pdf-upload-actions">
+            <button class="btn btn-ghost" id="pdf-upload-cancel" type="button">Cancelar</button>
+            <button class="btn btn-primary" type="submit">Importar</button>
+          </div>
+        </form>
         <div class="grid" id="grid"></div>
         <nav class="pagination" id="pagination" aria-label="Paginação do catálogo" hidden>
           <button class="btn pagination-btn" id="page-prev" type="button" aria-label="Página anterior">←</button>
@@ -151,6 +172,6 @@
     </section>
   </div>
 
-  <script type="module" src="./app.js?v=20260929-ocr-translation"></script>
+  <script type="module" src="./app.js?v=20261020-pdf-reader"></script>
 </body>
 </html>

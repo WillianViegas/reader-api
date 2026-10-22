@@ -43,3 +43,43 @@ Authorization: Bearer {{readerToken}}
 ### Proxy one MangaDex chapter image through the Reader API for canvas/OCR
 GET {{reader_api_HostAddress}}/api/catalog/chapters/{{chapterId}}/pages/0
 Accept: image/jpeg
+
+### Import a PDF into the authenticated user's library (maximum 100 MB)
+POST {{reader_api_HostAddress}}/api/library/pdfs
+Authorization: Bearer {{readerToken}}
+Content-Type: multipart/form-data; boundary=pdf-boundary
+
+--pdf-boundary
+Content-Disposition: form-data; name="title"
+
+My book
+--pdf-boundary
+Content-Disposition: form-data; name="file"; filename="book.pdf"
+Content-Type: application/pdf
+
+< ./book.pdf
+--pdf-boundary--
+
+### Read a PDF from the authenticated user's library
+GET {{reader_api_HostAddress}}/api/library/pdfs/{{pdfId}}
+Authorization: Bearer {{readerToken}}
+Accept: application/pdf
+
+### Read a PDF cover (JPEG generated from the first page)
+GET {{reader_api_HostAddress}}/api/library/pdfs/{{pdfId}}/cover
+Authorization: ******
+
+### Save reading progress of an imported PDF
+PUT {{reader_api_HostAddress}}/api/library/pdfs/{{pdfId}}/progress
+Authorization: ******
+Content-Type: application/json
+
+{ "currentPage": 3, "pageCount": 120 }
+
+### Get reading progress of an imported PDF
+GET {{reader_api_HostAddress}}/api/library/pdfs/{{pdfId}}/progress
+Authorization: ******
+
+### Remove an imported PDF
+DELETE {{reader_api_HostAddress}}/api/library/pdfs/{{pdfId}}
+Authorization: Bearer {{readerToken}}
