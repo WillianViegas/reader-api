@@ -167,10 +167,21 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy(CorsPolicy, policy =>
     {
-        if (allowedOrigins.Length > 0)
+        policy.AllowAnyHeader().AllowAnyMethod();
+
+        // Flutter Web uses a random localhost port in development; production relies on explicit origins.
+        var isDevelopment = builder.Environment.IsDevelopment();
+        policy.SetIsOriginAllowed(origin =>
         {
-            policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
-        }
+            if (allowedOrigins.Contains(origin.TrimEnd('/'), StringComparer.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return isDevelopment
+                && Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+                && uri.Host is "localhost" or "127.0.0.1";
+        });
     });
 });
 
@@ -202,9 +213,10 @@ await using (var scope = app.Services.CreateAsyncScope())
     }
 }
 
-app.UseHttpsRedirection();
-
+// CORS runs before HTTPS redirection so preflight (OPTIONS) is answered directly, never redirected.
 app.UseCors(CorsPolicy);
+
+app.UseHttpsRedirection();
 
 // Serve the static web client (web/) at the site root when the folder is present.
 // In development it lives at <contentRoot>/../web; in the container it is copied next to the app.
