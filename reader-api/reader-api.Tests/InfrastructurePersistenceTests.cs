@@ -112,6 +112,7 @@ public class InfrastructurePersistenceTests
             var loadedItem = await new EfLibraryRepository(readContext).GetByUserAndMangaAsync(userId, MangaId());
 
             Assert.NotNull(loadedItem);
+            Assert.False(loadedItem.IsArchived);
             Assert.Equal(ExternalCatalogProvider.MangaDex, loadedItem.Manga.Id.Provider);
             Assert.Equal("manga-1", loadedItem.Manga.Id.Value);
             Assert.Equal("Manga One", loadedItem.Manga.Title);
@@ -125,6 +126,39 @@ public class InfrastructurePersistenceTests
             Assert.Equal(3, progress.CurrentPage);
             Assert.Equal(10, progress.PageCount);
             Assert.Equal(Now, progress.LastReadAt);
+        }
+        finally
+        {
+            DeleteDatabase(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task IsArchived_IsPersistedPerUserLibraryItem()
+    {
+        var databasePath = NewDatabasePath();
+        try
+        {
+            var ownerId = Guid.NewGuid();
+            var otherUserId = Guid.NewGuid();
+            var archivedItem = CreateItem(ownerId);
+            archivedItem.SetArchived(true, Now.AddMinutes(1));
+
+            await using (var writeContext = await CreateContextAsync(databasePath))
+            {
+                var repository = new EfLibraryRepository(writeContext);
+                await repository.AddAsync(archivedItem);
+                await repository.AddAsync(CreateItem(otherUserId));
+                await writeContext.SaveChangesAsync();
+            }
+
+            await using var readContext = await CreateContextAsync(databasePath, migrate: false);
+            var repositoryForRead = new EfLibraryRepository(readContext);
+            var ownerItem = await repositoryForRead.GetByUserAndMangaAsync(ownerId, MangaId());
+            var otherUserItem = await repositoryForRead.GetByUserAndMangaAsync(otherUserId, MangaId());
+
+            Assert.True(ownerItem!.IsArchived);
+            Assert.False(otherUserItem!.IsArchived);
         }
         finally
         {

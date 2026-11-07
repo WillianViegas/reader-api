@@ -31,13 +31,13 @@ internal static class MangaDexMapper
 
     public static ChapterPagesDto ToPages(string chapterId, MangaDexAtHomeResponse response)
     {
-        var files = response.Chapter.Data.Count > 0
+        var files = response.Chapter!.Data is { Count: > 0 }
             ? response.Chapter.Data
-            : response.Chapter.DataSaver;
+            : response.Chapter.DataSaver!;
 
-        var baseUrl = response.BaseUrl.TrimEnd('/');
+        var baseUrl = response.BaseUrl!.TrimEnd('/');
         var urls = files
-            .Select(file => $"{baseUrl}/data/{response.Chapter.Hash}/{file}")
+            .Select(file => $"{baseUrl}/data/{Uri.EscapeDataString(response.Chapter.Hash!)}/{Uri.EscapeDataString(file)}")
             .ToList();
 
         return new ChapterPagesDto(ExternalCatalogProvider.MangaDex, chapterId, urls);

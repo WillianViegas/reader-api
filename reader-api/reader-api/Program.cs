@@ -107,11 +107,13 @@ builder.Services.AddScoped<UserAuthenticationService>();
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<JwtUserSynchronizer>();
 builder.Services.AddScoped<GetUserProfileHandler>();
+builder.Services.AddScoped<UpdateUserProfileHandler>();
 builder.Services.AddScoped<AddMangaToLibraryHandler>();
 builder.Services.AddScoped<AddPdfToLibraryHandler>();
 builder.Services.AddScoped<OpenLibraryPdfHandler>();
 builder.Services.AddScoped<RemoveMangaFromLibraryHandler>();
 builder.Services.AddScoped<SetMangaFavoriteHandler>();
+builder.Services.AddScoped<SetLibraryItemArchivedHandler>();
 builder.Services.AddScoped<RegisterReadingProgressHandler>();
 builder.Services.AddScoped<CompleteChapterHandler>();
 builder.Services.AddScoped<GetLibraryHandler>();
@@ -257,6 +259,18 @@ app.UseExceptionHandler(exceptionApp => exceptionApp.Run(async context =>
         Detail = status == StatusCodes.Status500InternalServerError ? null : exception?.Message,
         Instance = context.Request.Path
     };
+
+    if (exception is ExternalCatalogUnavailableException externalException)
+    {
+        app.Logger.LogWarning("External catalog request failed: {Reason}", externalException.Message);
+    }
+    else
+    {
+        app.Logger.LogError(
+            "API request failed with status {StatusCode} and error type {ErrorType}.",
+            status,
+            exception?.GetType().Name ?? "unknown");
+    }
 
     context.Response.StatusCode = status;
     context.Response.ContentType = "application/problem+json";

@@ -134,20 +134,20 @@ internal sealed class MangaDexAtHomeResponse
     public string Result { get; init; } = string.Empty;
 
     [JsonPropertyName("baseUrl")]
-    public string BaseUrl { get; init; } = string.Empty;
+    public string? BaseUrl { get; init; }
 
     [JsonPropertyName("chapter")]
-    public MangaDexAtHomeChapter Chapter { get; init; } = new();
+    public MangaDexAtHomeChapter? Chapter { get; init; } = new();
 }
 
 internal sealed class MangaDexAtHomeChapter
 {
     [JsonPropertyName("hash")]
-    public string Hash { get; init; } = string.Empty;
+    public string? Hash { get; init; }
 
     [JsonPropertyName("data")]
-    public List<string> Data { get; init; } = [];
+    public List<string>? Data { get; init; } = [];
 
     [JsonPropertyName("dataSaver")]
-    public List<string> DataSaver { get; init; } = [];
+    public List<string>? DataSaver { get; init; } = [];
 }

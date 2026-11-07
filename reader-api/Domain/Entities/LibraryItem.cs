@@ -6,7 +6,7 @@ public sealed class LibraryItem
 {
     private readonly List<ReadingProgress> readingProgresses = [];
 
-    public LibraryItem(Guid id, Guid userId, MangaReference manga, bool isFavorite, DateTimeOffset createdAt)
+    public LibraryItem(Guid id, Guid userId, MangaReference manga, bool isFavorite, DateTimeOffset createdAt, bool isArchived = false)
     {
         if (id == Guid.Empty)
         {
@@ -22,6 +22,7 @@ public sealed class LibraryItem
         UserId = userId;
         Manga = manga ?? throw new ArgumentNullException(nameof(manga));
         IsFavorite = isFavorite;
+        IsArchived = isArchived;
         CreatedAt = createdAt;
         UpdatedAt = createdAt;
     }
@@ -40,6 +41,8 @@ public sealed class LibraryItem
 
     public bool IsFavorite { get; private set; }
 
+    public bool IsArchived { get; private set; }
+
     public DateTimeOffset CreatedAt { get; }
 
     public DateTimeOffset UpdatedAt { get; private set; }
@@ -49,6 +52,12 @@ public sealed class LibraryItem
     public void SetFavorite(bool isFavorite, DateTimeOffset updatedAt)
     {
         IsFavorite = isFavorite;
+        UpdatedAt = updatedAt;
+    }
+
+    public void SetArchived(bool isArchived, DateTimeOffset updatedAt)
+    {
+        IsArchived = isArchived;
         UpdatedAt = updatedAt;
     }
 

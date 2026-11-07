@@ -118,6 +118,63 @@ public class MangaDexContractTests
     }
 
     [Fact]
+    public async Task GetPages_PreservesTheProviderPageOrder()
+    {
+        const string json = """{"result":"ok","baseUrl":"https://node.mangadex.network","chapter":{"hash":"abc","data":["page-3.jpg","page-1.jpg","page-2.jpg"],"dataSaver":[]}}""";
+        var provider = new MangaDexChapterProvider(CreateClient(_ => Json(HttpStatusCode.OK, json)), Options);
+
+        var result = await provider.GetPagesAsync(new ExternalResourceId(ExternalCatalogProvider.MangaDex, ChapterId));
+
+        Assert.NotNull(result);
+        Assert.Equal(
+            [
+                "https://node.mangadex.network/data/abc/page-3.jpg",
+                "https://node.mangadex.network/data/abc/page-1.jpg",
+                "https://node.mangadex.network/data/abc/page-2.jpg"
+            ],
+            result.PageUrls);
+    }
+
+    [Fact]
+    public async Task GetPages_WhenTheChapterHasNoPages_FailsInsteadOfReturningAnEmptyList()
+    {
+        const string json = """{"result":"ok","baseUrl":"https://node.mangadex.network","chapter":{"hash":"abc","data":[],"dataSaver":[]}}""";
+        var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK, json));
+        var provider = new MangaDexChapterProvider(CreateClient(handler), Options);
+
+        var exception = await Assert.ThrowsAsync<ExternalCatalogUnavailableException>(
+            () => provider.GetPagesAsync(new ExternalResourceId(ExternalCatalogProvider.MangaDex, ChapterId)));
+
+        Assert.Contains("contains no pages", exception.Message);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task GetPages_WhenTheProviderResponseIsIncomplete_FailsInsteadOfReturningPartialPages()
+    {
+        const string json = """{"result":"ok","baseUrl":"https://node.mangadex.network","chapter":{"hash":"abc","data":["page-1.jpg",""],"dataSaver":["fallback.jpg"]}}""";
+        var provider = new MangaDexChapterProvider(CreateClient(_ => Json(HttpStatusCode.OK, json)), Options);
+
+        var exception = await Assert.ThrowsAsync<ExternalCatalogUnavailableException>(
+            () => provider.GetPagesAsync(new ExternalResourceId(ExternalCatalogProvider.MangaDex, ChapterId)));
+
+        Assert.Contains("incomplete page list", exception.Message);
+    }
+
+    [Fact]
+    public async Task GetPages_WhenMangaDexReturnsADefinitiveError_DoesNotRetry()
+    {
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest));
+        var provider = new MangaDexChapterProvider(CreateClient(handler), Options);
+
+        var exception = await Assert.ThrowsAsync<ExternalCatalogUnavailableException>(
+            () => provider.GetPagesAsync(new ExternalResourceId(ExternalCatalogProvider.MangaDex, ChapterId)));
+
+        Assert.Contains("HTTP 400", exception.Message);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
     public async Task GetPageImage_ProxiesImageFromAllowedMangaDexAtHomeHost()
     {
         var imageBytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
@@ -142,6 +199,55 @@ public class MangaDexContractTests
     }
 
     [Fact]
+    public async Task GetPageImage_RetriesATransientHostFailureAndThenReturnsTheImage()
+    {
+        var imageBytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xD9 };
+        var imageAttempts = 0;
+        var handler = new RecordingHandler(request =>
+        {
+            if (request.RequestUri!.Host == "api.mangadex.org")
+            {
+                return Json(HttpStatusCode.OK, AtHomeJson);
+            }
+
+            imageAttempts++;
+            return imageAttempts == 1
+                ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(imageBytes)
+                    {
+                        Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg") }
+                    }
+                };
+        });
+        var provider = new MangaDexChapterProvider(CreateClient(handler), Options);
+
+        var result = await provider.GetPageImageAsync(new ExternalResourceId(ExternalCatalogProvider.MangaDex, ChapterId), 0);
+
+        Assert.NotNull(result);
+        Assert.Equal(imageBytes, result.Content);
+        Assert.Equal(2, imageAttempts);
+        Assert.Equal(3, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task GetPageImage_WhenTheImageHostReturnsADefinitiveError_FailsWithoutRetrying()
+    {
+        var handler = new RecordingHandler(request =>
+            request.RequestUri!.Host == "api.mangadex.org"
+                ? Json(HttpStatusCode.OK, AtHomeJson)
+                : new HttpResponseMessage(HttpStatusCode.Forbidden));
+        var provider = new MangaDexChapterProvider(CreateClient(handler), Options);
+
+        var exception = await Assert.ThrowsAsync<ExternalCatalogUnavailableException>(
+            () => provider.GetPageImageAsync(new ExternalResourceId(ExternalCatalogProvider.MangaDex, ChapterId), 0));
+
+        Assert.Contains("HTTP 403", exception.Message);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
     public async Task GetPageImage_RejectsUntrustedAtHomeHost()
     {
         var handler = new RecordingHandler(_ => Json(HttpStatusCode.OK, AtHomeJson.Replace(
@@ -150,9 +256,10 @@ public class MangaDexContractTests
             StringComparison.Ordinal)));
         var provider = new MangaDexChapterProvider(CreateClient(handler), Options);
 
-        var result = await provider.GetPageImageAsync(new ExternalResourceId(ExternalCatalogProvider.MangaDex, ChapterId), 0);
+        var exception = await Assert.ThrowsAsync<ExternalCatalogUnavailableException>(
+            () => provider.GetPageImageAsync(new ExternalResourceId(ExternalCatalogProvider.MangaDex, ChapterId), 0));
 
-        Assert.Null(result);
+        Assert.Contains("invalid image host", exception.Message);
         Assert.Single(handler.Requests);
     }
 

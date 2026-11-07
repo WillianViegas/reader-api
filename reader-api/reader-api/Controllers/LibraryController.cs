@@ -20,6 +20,7 @@ public sealed class LibraryController(
     AddPdfToLibraryHandler addPdf,
     OpenLibraryPdfHandler openPdf,
     SetMangaFavoriteHandler setFavorite,
+    SetLibraryItemArchivedHandler setArchived,
     GetContinueReadingHandler getContinueReading,
     GetReadingProgressHandler getReadingProgress,
     RegisterReadingProgressHandler registerProgress,
@@ -33,18 +34,20 @@ public sealed class LibraryController(
     [ProducesResponseType<PagedResultDto<LibraryItemDto>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<PagedResultDto<LibraryItemDto>>> Get(
         [FromQuery] bool favoriteOnly = false,
+        [FromQuery] bool archivedOnly = false,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
         logger.LogInformation(
-            "Getting library for user {UserId}, favoriteOnly {FavoriteOnly}, page {Page}, pageSize {PageSize}",
+            "Getting library for user {UserId}, favoriteOnly {FavoriteOnly}, archivedOnly {ArchivedOnly}, page {Page}, pageSize {PageSize}",
             currentUser.UserId,
             favoriteOnly,
+            archivedOnly,
             page,
             pageSize);
 
-        var result = await getLibrary.HandleAsync(new GetLibraryQuery(favoriteOnly, page, pageSize), cancellationToken);
+        var result = await getLibrary.HandleAsync(new GetLibraryQuery(favoriteOnly, page, pageSize, archivedOnly), cancellationToken);
         logger.LogInformation("Found {LibraryItemCount} library items for user {UserId}", result.TotalCount, currentUser.UserId);
         return Ok(result);
     }
@@ -199,6 +202,21 @@ public sealed class LibraryController(
         return NoContent();
     }
 
+    [HttpPut("pdfs/{pdfId:guid}/archive")]
+    [ProducesResponseType<LibraryItemDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<LibraryItemDto>> SetPdfArchived(Guid pdfId, SetArchivedRequest request, CancellationToken cancellationToken)
+    {
+        var item = await setArchived.HandleAsync(
+            new SetLibraryItemArchivedCommand(
+                currentUser.UserId,
+                ExternalCatalogProvider.UploadedPdf,
+                pdfId.ToString("D"),
+                request.IsArchived),
+            cancellationToken);
+        return Ok(item);
+    }
+
     [HttpDelete("{mangaId}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
@@ -223,6 +241,21 @@ public sealed class LibraryController(
             new SetMangaFavoriteCommand(currentUser.UserId, ExternalCatalogProvider.MangaDex, mangaId, request.IsFavorite),
             cancellationToken);
         logger.LogInformation("Set favorite {IsFavorite} for manga {MangaId} and user {UserId}", item.IsFavorite, mangaId, currentUser.UserId);
+        return Ok(item);
+    }
+
+    [HttpPut("{mangaId}/archive")]
+    [ProducesResponseType<LibraryItemDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<LibraryItemDto>> SetMangaArchived(string mangaId, SetArchivedRequest request, CancellationToken cancellationToken)
+    {
+        var item = await setArchived.HandleAsync(
+            new SetLibraryItemArchivedCommand(
+                currentUser.UserId,
+                ExternalCatalogProvider.MangaDex,
+                mangaId,
+                request.IsArchived),
+            cancellationToken);
         return Ok(item);
     }
 
@@ -330,6 +363,9 @@ public sealed record AddPdfToLibraryRequest
 }
 
 public sealed record SetFavoriteRequest(bool IsFavorite);
+
+/// <summary>Updates whether the authenticated user's library item is archived.</summary>
+public sealed record SetArchivedRequest(bool IsArchived);
 
 /// <summary>Reading position inside an imported PDF.</summary>
 public sealed record RegisterPdfProgressRequest([Range(1, int.MaxValue)] int CurrentPage, [Range(1, int.MaxValue)] int PageCount);

@@ -26,7 +26,7 @@ public sealed class MangaDexChapterProvider(MangaDexApiClient client, MangaDexOp
 
         // Chapters hosted externally (official simulpubs) have no pages on MangaDex@Home.
         var readable = (response?.Data ?? [])
-            .Where(chapter => chapter.Attributes.ExternalUrl is null && chapter.Attributes.Pages > 0)
+            .Where(chapter => string.IsNullOrWhiteSpace(chapter.Attributes.ExternalUrl) && chapter.Attributes.Pages > 0)
             .Select(MangaDexMapper.ToSummary)
             .ToList();
 
@@ -45,9 +45,13 @@ public sealed class MangaDexChapterProvider(MangaDexApiClient client, MangaDexOp
             options.MaxRetryAttempts,
             cancellationToken);
 
-        return response is null || string.IsNullOrWhiteSpace(response.BaseUrl)
-            ? null
-            : MangaDexMapper.ToPages(chapterId.Value, response);
+        if (response is null)
+        {
+            return null;
+        }
+
+        ValidateAtHomeResponse(response);
+        return MangaDexMapper.ToPages(chapterId.Value, response);
     }
 
     public async Task<ChapterPageImageDto?> GetPageImageAsync(
@@ -61,20 +65,64 @@ public sealed class MangaDexChapterProvider(MangaDexApiClient client, MangaDexOp
             $"at-home/server/{Uri.EscapeDataString(chapterId.Value)}",
             options.MaxRetryAttempts,
             cancellationToken);
-        if (response is null || !Uri.TryCreate(response.BaseUrl, UriKind.Absolute, out var baseUri) || !IsAllowedAtHomeHost(baseUri))
+        if (response is null)
         {
             return null;
         }
 
-        var files = response.Chapter.Data.Count > 0
-            ? response.Chapter.Data
-            : response.Chapter.DataSaver;
-        if (pageIndex >= files.Count || string.IsNullOrWhiteSpace(response.Chapter.Hash)) return null;
+        var files = ValidateAtHomeResponse(response);
+        if (pageIndex >= files.Count) return null;
 
         var imageUri = new Uri(
-            $"{baseUri.GetLeftPart(UriPartial.Authority).TrimEnd('/')}/data/{Uri.EscapeDataString(response.Chapter.Hash)}/{Uri.EscapeDataString(files[pageIndex])}",
+            $"{GetAtHomeBaseUri(response).GetLeftPart(UriPartial.Authority).TrimEnd('/')}/data/{Uri.EscapeDataString(response.Chapter!.Hash!)}/{Uri.EscapeDataString(files[pageIndex])}",
             UriKind.Absolute);
-        return await client.GetImageAsync(imageUri, cancellationToken);
+        return await client.GetImageAsync(imageUri, options.MaxRetryAttempts, cancellationToken);
+    }
+
+    private static IReadOnlyList<string> ValidateAtHomeResponse(MangaDexAtHomeResponse response)
+    {
+        if (!string.Equals(response.Result, "ok", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ExternalCatalogUnavailableException("MangaDex did not return a successful chapter response.");
+        }
+
+        var chapter = response.Chapter;
+        if (chapter is null || string.IsNullOrWhiteSpace(chapter.Hash))
+        {
+            throw new ExternalCatalogUnavailableException("The external chapter response is missing its chapter hash.");
+        }
+
+        _ = GetAtHomeBaseUri(response);
+        var files = chapter.Data is { Count: > 0 } ? chapter.Data : chapter.DataSaver;
+        if (files is null || files.Count == 0)
+        {
+            throw new ExternalCatalogUnavailableException("The external chapter response contains no pages.");
+        }
+
+        if (files.Any(file =>
+                string.IsNullOrWhiteSpace(file) ||
+                file is "." or ".." ||
+                file.Contains('/') ||
+                file.Contains('\\')))
+        {
+            throw new ExternalCatalogUnavailableException("The external chapter response contains an incomplete page list.");
+        }
+
+        return files;
+    }
+
+    private static Uri GetAtHomeBaseUri(MangaDexAtHomeResponse response)
+    {
+        if (!Uri.TryCreate(response.BaseUrl, UriKind.Absolute, out var baseUri) ||
+            !IsAllowedAtHomeHost(baseUri) ||
+            (baseUri.AbsolutePath != "/" && baseUri.AbsolutePath.Length != 0) ||
+            !string.IsNullOrEmpty(baseUri.Query) ||
+            !string.IsNullOrEmpty(baseUri.Fragment))
+        {
+            throw new ExternalCatalogUnavailableException("The external chapter response contains an invalid image host.");
+        }
+
+        return baseUri;
     }
 
     private static bool IsAllowedAtHomeHost(Uri uri) =>

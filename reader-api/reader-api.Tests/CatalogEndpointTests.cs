@@ -131,6 +131,20 @@ public class CatalogEndpointTests
     }
 
     [Fact]
+    public async Task GetPages_WhenTheProviderHasNoUsablePages_ReturnsServiceUnavailableProblemDetails()
+    {
+        using var factory = CreateFactory(chapters => chapters.PagesUnavailable = true);
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/catalog/chapters/chapter-1/pages");
+        var problem = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("no usable pages", problem);
+    }
+
+    [Fact]
     public async Task GetPageImage_ReturnsImageBytesFromTheReaderApiOrigin()
     {
         using var factory = CreateFactory();
@@ -190,6 +204,8 @@ public class CatalogEndpointTests
 
         public bool Unavailable { get; set; }
 
+        public bool PagesUnavailable { get; set; }
+
         public Action<SearchCatalogQuery>? SearchQueryObserved { get; set; }
 
         public Task<IReadOnlyList<CatalogTagDto>> GetTagsAsync(CancellationToken cancellationToken = default)
@@ -230,6 +246,11 @@ public class CatalogEndpointTests
         public Task<ChapterPagesDto?> GetPagesAsync(ExternalResourceId chapterId, CancellationToken cancellationToken = default)
         {
             ThrowIfUnavailable();
+            if (PagesUnavailable)
+            {
+                throw new ExternalCatalogUnavailableException("The external chapter response has no usable pages.");
+            }
+
             return Task.FromResult<ChapterPagesDto?>(new ChapterPagesDto(chapterId.Provider, chapterId.Value, ["https://example.test/1.jpg"]));
         }
 

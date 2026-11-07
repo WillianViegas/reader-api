@@ -86,7 +86,12 @@ public sealed class CatalogController(
     public async Task<ActionResult<ChapterPagesDto>> GetPages(string chapterId, CancellationToken cancellationToken) =>
         await getChapterPages.HandleAsync(new GetChapterPagesQuery(ExternalCatalogProvider.MangaDex, chapterId), cancellationToken) is { } pages
             ? Ok(pages)
-            : NotFound(new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "The chapter pages are not available in the external catalog." });
+            : NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Chapter not found",
+                Detail = "The chapter was not found in the external catalog."
+            });
 
     [HttpGet("chapters/{chapterId}/pages/{pageIndex:int}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -100,7 +105,15 @@ public sealed class CatalogController(
             pageIndex,
             cancellationToken);
 
-        if (image is null) return NotFound();
+        if (image is null)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Chapter page not found",
+                Detail = "The chapter or requested page index was not found in the external catalog."
+            });
+        }
         Response.Headers.CacheControl = "private,max-age=300";
         return File(image.Content, image.ContentType);
     }

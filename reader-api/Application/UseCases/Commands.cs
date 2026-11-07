@@ -12,6 +12,8 @@ public sealed record RegisterUserCommand(string ExternalSubject, string DisplayN
 
 public sealed record AuthenticateUserCommand(string ExternalSubject, string DisplayName);
 
+public sealed record UpdateUserProfileCommand(string DisplayName);
+
 public sealed record AddMangaToLibraryCommand(Guid UserId, MangaReferenceDto Manga, bool IsFavorite = false);
 
 public sealed record RemoveMangaFromLibraryCommand(Guid UserId, ExternalCatalogProvider Provider, string MangaId);
@@ -19,6 +21,8 @@ public sealed record RemoveMangaFromLibraryCommand(Guid UserId, ExternalCatalogP
 public sealed record AddPdfToLibraryCommand(Guid UserId, string Title, Stream Content, Stream? Cover = null);
 
 public sealed record SetMangaFavoriteCommand(Guid UserId, ExternalCatalogProvider Provider, string MangaId, bool IsFavorite);
+
+public sealed record SetLibraryItemArchivedCommand(Guid UserId, ExternalCatalogProvider Provider, string MangaId, bool IsArchived);
 
 public sealed record RegisterReadingProgressCommand(Guid UserId, ExternalCatalogProvider MangaProvider, string MangaId, ChapterReferenceDto Chapter, int CurrentPage, int? PageCount);
 
@@ -68,6 +72,25 @@ public sealed class AuthenticateUserHandler(
         await users.AddAsync(user, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         logger?.LogInformation("Authenticated and created user {UserId}", user.Id);
+        return ApplicationMapper.ToDto(user);
+    }
+}
+
+public sealed class UpdateUserProfileHandler(
+    IUserRepository users,
+    ICurrentUser currentUser,
+    IUnitOfWork unitOfWork,
+    IClock clock,
+    ILogger<UpdateUserProfileHandler>? logger = null)
+{
+    public async Task<UserProfileDto> HandleAsync(UpdateUserProfileCommand command, CancellationToken cancellationToken = default)
+    {
+        logger?.LogInformation("Updating profile for user {UserId}", currentUser.UserId);
+        var user = await users.GetByIdAsync(currentUser.UserId, cancellationToken)
+            ?? throw new KeyNotFoundException("The current user was not found.");
+
+        user.UpdateDisplayName(command.DisplayName, clock.UtcNow);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
         return ApplicationMapper.ToDto(user);
     }
 }
@@ -249,6 +272,34 @@ public sealed class SetMangaFavoriteHandler(
         await library.SaveAsync(item, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
         logger?.LogInformation("Set favorite {IsFavorite} for library item {LibraryItemId}", item.IsFavorite, item.Id);
+        return ApplicationMapper.ToDto(item);
+    }
+}
+
+public sealed class SetLibraryItemArchivedHandler(
+    ILibraryRepository library,
+    IUnitOfWork unitOfWork,
+    IClock clock,
+    ILogger<SetLibraryItemArchivedHandler>? logger = null)
+{
+    public async Task<LibraryItemDto> HandleAsync(SetLibraryItemArchivedCommand command, CancellationToken cancellationToken = default)
+    {
+        logger?.LogInformation(
+            "Setting archived {IsArchived} for library item {MangaProvider}/{MangaId} and user {UserId}",
+            command.IsArchived,
+            command.Provider,
+            command.MangaId,
+            command.UserId);
+        var item = await library.GetByUserAndMangaAsync(
+            command.UserId,
+            ApplicationMapper.ToExternalId(command.Provider, command.MangaId),
+            cancellationToken)
+            ?? throw new KeyNotFoundException("The item was not found in the user's library.");
+
+        item.SetArchived(command.IsArchived, clock.UtcNow);
+        await library.SaveAsync(item, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
+        logger?.LogInformation("Set archived {IsArchived} for library item {LibraryItemId}", item.IsArchived, item.Id);
         return ApplicationMapper.ToDto(item);
     }
 }

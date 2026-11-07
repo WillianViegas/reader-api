@@ -27,6 +27,7 @@ internal static class ApplicationMapper
         item.Id,
         ToDto(item.Manga),
         item.IsFavorite,
+        item.IsArchived,
         item.CreatedAt,
         item.UpdatedAt,
         item.ReadingProgresses.Select(ToDto).ToList());

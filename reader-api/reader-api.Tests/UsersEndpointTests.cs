@@ -103,6 +103,51 @@ public class UsersEndpointTests
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task UpdateMe_WithoutAToken_ReturnsUnauthorized()
+    {
+        using var factory = CreateFactory();
+
+        var response = await factory.CreateClient().PutAsJsonAsync("/api/users/me", new UpdateUserProfileRequest("New Name"));
+
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("PUT")]
+    [InlineData("PATCH")]
+    public async Task UpdateMe_WithAValidName_UpdatesAndPersistsTheDisplayName(string method)
+    {
+        using var factory = CreateFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client));
+
+        var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), "/api/users/me")
+        {
+            Content = JsonContent.Create(new UpdateUserProfileRequest("  Renamed Reader  "))
+        });
+        var body = await response.Content.ReadAsStringAsync();
+        var profile = await client.GetStringAsync("/api/users/me");
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("Renamed Reader", body);
+        Assert.Contains("Renamed Reader", profile);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task UpdateMe_WithABlankName_ReturnsBadRequest(string displayName)
+    {
+        using var factory = CreateFactory();
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await LoginAsync(client));
+
+        var response = await client.PutAsJsonAsync("/api/users/me", new UpdateUserProfileRequest(displayName));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     private static WebApplicationFactory<Program> CreateFactory()
     {
         var factory = new ReaderApiFactory();

@@ -7,7 +7,7 @@ namespace Reader.Api.Application.UseCases;
 
 public sealed record GetUserProfileQuery;
 
-public sealed record GetLibraryQuery(bool FavoriteOnly = false, int Page = 1, int PageSize = 20);
+public sealed record GetLibraryQuery(bool FavoriteOnly = false, int Page = 1, int PageSize = 20, bool ArchivedOnly = false);
 
 public sealed record GetContinueReadingQuery;
 
@@ -51,7 +51,10 @@ public sealed class GetLibraryHandler(
         }
 
         var items = await library.GetByUserAsync(currentUser.UserId, cancellationToken);
-        var filtered = items.Where(item => !query.FavoriteOnly || item.IsFavorite).OrderByDescending(item => item.UpdatedAt).ToList();
+        var filtered = items
+            .Where(item => item.IsArchived == query.ArchivedOnly && (!query.FavoriteOnly || item.IsFavorite))
+            .OrderByDescending(item => item.UpdatedAt)
+            .ToList();
         var result = new PagedResultDto<LibraryItemDto>(
             filtered.Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).Select(ApplicationMapper.ToDto).ToList(),
             query.Page,
@@ -71,6 +74,7 @@ public sealed class GetContinueReadingHandler(
     {
         logger?.LogInformation("Getting continue-reading item for user {UserId}", currentUser.UserId);
         var candidate = (await library.GetByUserAsync(currentUser.UserId, cancellationToken))
+            .Where(item => !item.IsArchived)
             .Select(item => new { Item = item, Progress = item.GetResumeProgress() })
             .Where(item => item.Progress is not null)
             .OrderByDescending(item => !item.Progress!.IsCompleted)
@@ -84,7 +88,7 @@ public sealed class GetContinueReadingHandler(
         }
 
         logger?.LogInformation("Found continue-reading library item {LibraryItemId} for user {UserId}", candidate.Item.Id, currentUser.UserId);
-        return new ContinueReadingDto(candidate.Item.Id, ApplicationMapper.ToDto(candidate.Item.Manga), ApplicationMapper.ToDto(candidate.Progress!));
+        return new ContinueReadingDto(candidate.Item.Id, ApplicationMapper.ToDto(candidate.Item.Manga), candidate.Item.IsArchived, ApplicationMapper.ToDto(candidate.Progress!));
     }
 }
 

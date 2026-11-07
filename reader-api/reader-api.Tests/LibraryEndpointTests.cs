@@ -30,10 +30,26 @@ public class LibraryEndpointTests
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/library", new AddLibraryItemRequest(Manga))).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.DeleteAsync("/api/library/manga-1")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PutAsJsonAsync("/api/library/manga-1/favorite", new SetFavoriteRequest(true))).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PutAsJsonAsync("/api/library/manga-1/archive", new SetArchivedRequest(true))).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PutAsJsonAsync($"/api/library/pdfs/{Guid.NewGuid():D}/archive", new SetArchivedRequest(true))).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/library/continue-reading")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/library/manga-1/progress")).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PutAsJsonAsync("/api/library/manga-1/progress", new RegisterProgressRequest(Chapter, 1, 10))).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync("/api/library/manga-1/chapters/chapter-1/complete", null)).StatusCode);
+    }
+
+    [Fact]
+    public async Task OpenApi_DescribesArchiveRoutesFilterAndStateFields()
+    {
+        using var factory = CreateFactory();
+        var response = await factory.CreateClient().GetAsync("/openapi/v1.json");
+        var document = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("/api/library/{mangaId}/archive", document);
+        Assert.Contains("/api/library/pdfs/{pdfId}/archive", document);
+        Assert.Contains("archivedOnly", document);
+        Assert.Contains("isArchived", document);
     }
 
     [Fact]
@@ -62,6 +78,7 @@ public class LibraryEndpointTests
 
         var resume = await client.GetFromJsonAsync<ContinueReadingDto>("/api/library/continue-reading", JsonOptions);
         Assert.Equal("manga-1", resume!.Manga.ExternalId);
+        Assert.False(resume.IsArchived);
         Assert.Equal(4, resume.Progress.CurrentPage);
 
         var progresses = await client.GetFromJsonAsync<List<ReadingProgressDto>>("/api/library/manga-1/progress", JsonOptions);
@@ -116,6 +133,73 @@ public class LibraryEndpointTests
         Assert.Empty(otherLibrary!.Items);
         Assert.Equal(HttpStatusCode.NotFound, (await other.DeleteAsync("/api/library/manga-1")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await other.PutAsJsonAsync("/api/library/manga-1/favorite", new SetFavoriteRequest(true))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await other.PutAsJsonAsync("/api/library/manga-1/archive", new SetArchivedRequest(true))).StatusCode);
+    }
+
+    [Fact]
+    public async Task ArchiveManga_PreservesUserStateAndProgressAndCanBeRestored()
+    {
+        using var factory = CreateFactory();
+        var owner = await factory.CreateAuthenticatedClientAsync();
+        var other = await factory.CreateAuthenticatedClientAsync("other-reader@example.test");
+        Assert.Equal(HttpStatusCode.Created, (await owner.PostAsJsonAsync("/api/library", new AddLibraryItemRequest(Manga))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync("/api/library/manga-1/favorite", new SetFavoriteRequest(true))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync("/api/library/manga-1/progress", new RegisterProgressRequest(Chapter, 4, 10))).StatusCode);
+
+        var archiveResponse = await owner.PutAsJsonAsync("/api/library/manga-1/archive", new SetArchivedRequest(true));
+        var archivedItem = await archiveResponse.Content.ReadFromJsonAsync<LibraryItemDto>(JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, archiveResponse.StatusCode);
+        Assert.True(archivedItem!.IsArchived);
+        Assert.True(archivedItem.IsFavorite);
+        Assert.Equal(4, Assert.Single(archivedItem.Progresses).CurrentPage);
+
+        var activeItems = await owner.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library", JsonOptions);
+        Assert.Empty(activeItems!.Items);
+        Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync("/api/library/continue-reading")).StatusCode);
+
+        var archivedItems = await owner.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library?archivedOnly=true", JsonOptions);
+        Assert.True(Assert.Single(archivedItems!.Items).IsArchived);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await other.PutAsJsonAsync("/api/library/manga-1/archive", new SetArchivedRequest(false))).StatusCode);
+        var otherAdd = await other.PostAsJsonAsync("/api/library", new AddLibraryItemRequest(Manga));
+        Assert.Equal(HttpStatusCode.Created, otherAdd.StatusCode);
+        Assert.False((await otherAdd.Content.ReadFromJsonAsync<LibraryItemDto>(JsonOptions))!.IsArchived);
+
+        var restoreResponse = await owner.PutAsJsonAsync("/api/library/manga-1/archive", new SetArchivedRequest(false));
+        var restoredItem = await restoreResponse.Content.ReadFromJsonAsync<LibraryItemDto>(JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, restoreResponse.StatusCode);
+        Assert.False(restoredItem!.IsArchived);
+        Assert.True(restoredItem.IsFavorite);
+        Assert.Equal(4, Assert.Single(restoredItem.Progresses).CurrentPage);
+        Assert.Single((await owner.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library", JsonOptions))!.Items);
+        Assert.Equal(4, (await owner.GetFromJsonAsync<ContinueReadingDto>("/api/library/continue-reading", JsonOptions))!.Progress.CurrentPage);
+    }
+
+    [Fact]
+    public async Task GetLibrary_FiltersBeforePaginationAndCounting()
+    {
+        using var factory = CreateFactory();
+        var client = await factory.CreateAuthenticatedClientAsync();
+        foreach (var id in new[] { "manga-1", "manga-2", "manga-3", "manga-4" })
+        {
+            var manga = Manga with { ExternalId = id };
+            Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync("/api/library", new AddLibraryItemRequest(manga))).StatusCode);
+        }
+
+        Assert.Equal(HttpStatusCode.OK, (await client.PutAsJsonAsync("/api/library/manga-1/archive", new SetArchivedRequest(true))).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.PutAsJsonAsync("/api/library/manga-3/archive", new SetArchivedRequest(true))).StatusCode);
+
+        var activePage = await client.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library?page=1&pageSize=1", JsonOptions);
+        var archivedPageOne = await client.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library?archivedOnly=true&page=1&pageSize=1", JsonOptions);
+        var archivedPageTwo = await client.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library?archivedOnly=true&page=2&pageSize=1", JsonOptions);
+
+        Assert.Equal(2, activePage!.TotalCount);
+        Assert.Single(activePage.Items);
+        Assert.Equal(2, archivedPageOne!.TotalCount);
+        Assert.Single(archivedPageOne.Items);
+        Assert.Equal(2, archivedPageTwo!.TotalCount);
+        Assert.Single(archivedPageTwo.Items);
+        Assert.NotEqual(archivedPageOne.Items[0].Id, archivedPageTwo.Items[0].Id);
     }
 
     [Fact]
@@ -143,6 +227,38 @@ public class LibraryEndpointTests
 
         Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/library/pdfs/{item.Manga.ExternalId}")).StatusCode);
         Assert.Empty(storage.Documents);
+    }
+
+    [Fact]
+    public async Task ArchivePdf_PreservesTheFileAndProgressAndCanBeRestored()
+    {
+        var storage = new InMemoryPdfStorageProvider();
+        using var factory = CreateFactory(storage);
+        var owner = await factory.CreateAuthenticatedClientAsync();
+        using var form = CreatePdfForm("My local book", "%PDF-1.7\nexample PDF content");
+        var upload = await owner.PostAsync("/api/library/pdfs", form);
+        var item = await upload.Content.ReadFromJsonAsync<LibraryItemDto>(JsonOptions);
+        var pdfId = item!.Manga.ExternalId;
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync($"/api/library/pdfs/{pdfId}/progress", new RegisterPdfProgressRequest(4, 10))).StatusCode);
+
+        var archiveResponse = await owner.PutAsJsonAsync($"/api/library/pdfs/{pdfId}/archive", new SetArchivedRequest(true));
+        var archivedItem = await archiveResponse.Content.ReadFromJsonAsync<LibraryItemDto>(JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, archiveResponse.StatusCode);
+        Assert.True(archivedItem!.IsArchived);
+        Assert.Equal(4, Assert.Single(archivedItem.Progresses).CurrentPage);
+        Assert.Equal("%PDF-1.7\nexample PDF content", Encoding.UTF8.GetString(await (await owner.GetAsync($"/api/library/pdfs/{pdfId}")).Content.ReadAsByteArrayAsync()));
+        Assert.Empty((await owner.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library", JsonOptions))!.Items);
+        Assert.True(Assert.Single((await owner.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library?archivedOnly=true", JsonOptions))!.Items).IsArchived);
+
+        var other = await factory.CreateAuthenticatedClientAsync("other-reader@example.test");
+        Assert.Equal(HttpStatusCode.NotFound, (await other.PutAsJsonAsync($"/api/library/pdfs/{pdfId}/archive", new SetArchivedRequest(false))).StatusCode);
+
+        var restoreResponse = await owner.PutAsJsonAsync($"/api/library/pdfs/{pdfId}/archive", new SetArchivedRequest(false));
+        var restoredItem = await restoreResponse.Content.ReadFromJsonAsync<LibraryItemDto>(JsonOptions);
+        Assert.Equal(HttpStatusCode.OK, restoreResponse.StatusCode);
+        Assert.False(restoredItem!.IsArchived);
+        Assert.Equal(4, Assert.Single(restoredItem.Progresses).CurrentPage);
+        Assert.Single((await owner.GetFromJsonAsync<PagedResultDto<LibraryItemDto>>("/api/library", JsonOptions))!.Items);
     }
 
     [Fact]

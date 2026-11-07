@@ -23,6 +23,10 @@ public sealed class LibraryItemConfiguration : IEntityTypeConfiguration<LibraryI
         builder.Property(item => item.IsFavorite)
             .IsRequired();
 
+        builder.Property(item => item.IsArchived)
+            .IsRequired()
+            .HasDefaultValue(false);
+
         builder.Property(item => item.CreatedAt)
             .IsRequired();
 

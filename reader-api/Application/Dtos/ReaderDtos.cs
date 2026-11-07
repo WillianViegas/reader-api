@@ -77,9 +77,9 @@ public sealed record ChapterPageImageDto(byte[] Content, string ContentType);
 
 public sealed record ReadingProgressDto(Guid Id, ChapterReferenceDto Chapter, int CurrentPage, int? PageCount, DateTimeOffset LastReadAt, DateTimeOffset? CompletedAt);
 
-public sealed record LibraryItemDto(Guid Id, MangaReferenceDto Manga, bool IsFavorite, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, IReadOnlyList<ReadingProgressDto> Progresses);
+public sealed record LibraryItemDto(Guid Id, MangaReferenceDto Manga, bool IsFavorite, bool IsArchived, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, IReadOnlyList<ReadingProgressDto> Progresses);
 
-public sealed record ContinueReadingDto(Guid LibraryItemId, MangaReferenceDto Manga, ReadingProgressDto Progress);
+public sealed record ContinueReadingDto(Guid LibraryItemId, MangaReferenceDto Manga, bool IsArchived, ReadingProgressDto Progress);
 
 public sealed record PagedResultDto<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount);
 

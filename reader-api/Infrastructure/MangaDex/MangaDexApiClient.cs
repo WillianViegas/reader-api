@@ -5,126 +5,205 @@ using Reader.Api.Application.Dtos;
 
 namespace Reader.Api.Infrastructure.MangaDex;
 
-// Typed HTTP client for api.mangadex.org. Applies a retry policy for transient
-// failures only (timeouts, 5xx, 429 with backoff) and converts exhaustion into
-// ExternalCatalogUnavailableException. 404 responses surface as null so callers
-// can represent "external resource not found" without exposing the raw body.
+// Typed HTTP client for api.mangadex.org. Retries only bounded transient failures
+// and converts provider failures into ExternalCatalogUnavailableException.
 public sealed class MangaDexApiClient(HttpClient httpClient, ILogger<MangaDexApiClient> logger)
 {
     private static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)];
     private const int MaximumImageSizeBytes = 25 * 1024 * 1024;
+    private const int MaximumRetryAttempts = 4;
 
-    public async Task<ChapterPageImageDto?> GetImageAsync(Uri imageUri, CancellationToken cancellationToken)
-    {
-        HttpResponseMessage response;
-        try
-        {
-            response = await httpClient.GetAsync(imageUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        }
-        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
-        {
-            throw new ExternalCatalogUnavailableException("The manga page image is unavailable.", exception);
-        }
-
-        using (response)
-        {
-            if (response.StatusCode == HttpStatusCode.NotFound) return null;
-            try
+    public Task<ChapterPageImageDto> GetImageAsync(Uri imageUri, int maxRetryAttempts, CancellationToken cancellationToken) =>
+        GetWithRetryAsync(
+            imageUri,
+            "The manga page image",
+            maxRetryAttempts,
+            HttpCompletionOption.ResponseHeadersRead,
+            async (response, token) =>
             {
-                response.EnsureSuccessStatusCode();
-            }
-            catch (HttpRequestException exception)
-            {
-                throw new ExternalCatalogUnavailableException("The manga page image is unavailable.", exception);
-            }
-
-            var contentType = response.Content.Headers.ContentType?.MediaType;
-            if (contentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) is not true)
-            {
-                throw new ExternalCatalogUnavailableException("The external chapter resource was not an image.");
-            }
-
-            if (response.Content.Headers.ContentLength is > MaximumImageSizeBytes)
-            {
-                throw new ExternalCatalogUnavailableException("The manga page image is too large to proxy.");
-            }
-
-            var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
-            if (content.Length > MaximumImageSizeBytes)
-            {
-                throw new ExternalCatalogUnavailableException("The manga page image is too large to proxy.");
-            }
-
-            return new ChapterPageImageDto(content, contentType);
-        }
-    }
-
-    public async Task<T?> GetAsync<T>(string relativeUri, int maxRetryAttempts, CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; ; attempt++)
-        {
-            HttpResponseMessage? response = null;
-            try
-            {
-                response = await httpClient.GetAsync(relativeUri, cancellationToken);
-            }
-            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or OperationCanceledException)
-            {
-                response?.Dispose();
-
-                if (attempt < maxRetryAttempts - 1 && cancellationToken.IsCancellationRequested is false)
+                if (response.StatusCode == HttpStatusCode.NotFound)
                 {
-                    logger.LogWarning("Transient failure calling MangaDex (attempt {Attempt}); retrying.", attempt + 1);
-                    await DelayAsync(attempt, cancellationToken);
-                    continue;
+                    throw new ExternalCatalogUnavailableException("The external chapter page was not found (HTTP 404).");
                 }
 
-                throw new ExternalCatalogUnavailableException("The external catalog is unavailable.", exception);
-            }
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new ExternalCatalogUnavailableException(
+                        $"The external chapter page host returned an error (HTTP {(int)response.StatusCode}).");
+                }
 
-            using (response)
+                var contentType = response.Content.Headers.ContentType?.MediaType;
+                if (contentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) is not true)
+                {
+                    throw new ExternalCatalogUnavailableException("The external chapter resource was not an image.");
+                }
+
+                if (response.Content.Headers.ContentLength is > MaximumImageSizeBytes)
+                {
+                    throw new ExternalCatalogUnavailableException("The manga page image is too large to proxy.");
+                }
+
+                var content = await response.Content.ReadAsByteArrayAsync(token);
+                if (content.Length > MaximumImageSizeBytes)
+                {
+                    throw new ExternalCatalogUnavailableException("The manga page image is too large to proxy.");
+                }
+
+                return new ChapterPageImageDto(content, contentType);
+            },
+            cancellationToken);
+
+    public Task<T?> GetAsync<T>(string relativeUri, int maxRetryAttempts, CancellationToken cancellationToken) =>
+        GetWithRetryAsync<T?>(
+            new Uri(httpClient.BaseAddress ?? throw new InvalidOperationException("MangaDex client base address is not configured."), relativeUri),
+            "The external catalog",
+            maxRetryAttempts,
+            HttpCompletionOption.ResponseContentRead,
+            async (response, token) =>
             {
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
                     return default;
                 }
 
-                if (IsTransient(response.StatusCode))
+                if (!response.IsSuccessStatusCode)
                 {
-                    if (attempt < maxRetryAttempts - 1)
-                    {
-                        logger.LogWarning(
-                            "MangaDex responded {StatusCode} (attempt {Attempt}); retrying.",
-                            (int)response.StatusCode,
-                            attempt + 1);
-                        await DelayAsync(attempt, cancellationToken);
-                        continue;
-                    }
-
-                    throw new ExternalCatalogUnavailableException($"The external catalog responded with a transient failure ({(int)response.StatusCode}).");
+                    throw new ExternalCatalogUnavailableException(
+                        $"The external catalog responded with an error (HTTP {(int)response.StatusCode}).");
                 }
 
                 try
                 {
-                    response.EnsureSuccessStatusCode();
+                    return await response.Content.ReadFromJsonAsync<T>(cancellationToken: token);
                 }
-                catch (HttpRequestException exception)
+                catch (System.Text.Json.JsonException exception)
                 {
-                    throw new ExternalCatalogUnavailableException($"The external catalog responded with an error ({(int)response.StatusCode}).", exception);
+                    throw new ExternalCatalogUnavailableException("The external catalog returned an invalid response.", exception);
+                }
+            },
+            cancellationToken);
+
+    private async Task<TResponse> GetWithRetryAsync<TResponse>(
+        Uri requestUri,
+        string resourceName,
+        int maxRetryAttempts,
+        HttpCompletionOption completionOption,
+        Func<HttpResponseMessage, CancellationToken, Task<TResponse>> handleResponse,
+        CancellationToken cancellationToken)
+    {
+        var attempts = Math.Clamp(maxRetryAttempts, 1, MaximumRetryAttempts);
+        for (var attempt = 0; attempt < attempts; attempt++)
+        {
+            HttpResponseMessage response;
+            try
+            {
+                response = await httpClient.GetAsync(requestUri, completionOption, cancellationToken);
+            }
+            catch (Exception exception) when (IsTransientTransportFailure(exception))
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
                 }
 
-                return await response.Content.ReadFromJsonAsync<T>(cancellationToken: cancellationToken);
+                if (attempt + 1 == attempts)
+                {
+                    throw new ExternalCatalogUnavailableException(
+                        $"{resourceName} is unavailable after {attempts} attempts ({exception.GetType().Name}).",
+                        exception);
+                }
+
+                LogRetry(resourceName, attempt, attempts, exception.GetType().Name, null);
+                await DelayAsync(attempt, null, cancellationToken);
+                continue;
+            }
+
+            using (response)
+            {
+                if (IsTransient(response.StatusCode))
+                {
+                    var statusCode = response.StatusCode;
+                    var retryAfter = response.Headers.RetryAfter;
+                    var retryDelay = GetRetryDelay(attempt, retryAfter);
+
+                    if (attempt + 1 == attempts)
+                    {
+                        throw new ExternalCatalogUnavailableException(
+                            $"{resourceName} returned a transient failure (HTTP {(int)statusCode}) after {attempts} attempts.");
+                    }
+
+                    LogRetry(resourceName, attempt, attempts, null, (int)statusCode, retryDelay);
+                    await Task.Delay(retryDelay, cancellationToken);
+                    continue;
+                }
+
+                try
+                {
+                    return await handleResponse(response, cancellationToken);
+                }
+                catch (Exception exception) when (IsTransientTransportFailure(exception))
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+
+                    if (attempt + 1 == attempts)
+                    {
+                        throw new ExternalCatalogUnavailableException(
+                            $"{resourceName} could not be downloaded completely after {attempts} attempts ({exception.GetType().Name}).",
+                            exception);
+                    }
+
+                    LogRetry(resourceName, attempt, attempts, exception.GetType().Name, null);
+                    await DelayAsync(attempt, null, cancellationToken);
+                }
             }
         }
+
+        throw new InvalidOperationException("The external request retry loop ended unexpectedly.");
+    }
+
+    private void LogRetry(
+        string resourceName,
+        int attempt,
+        int maxAttempts,
+        string? errorType,
+        int? statusCode,
+        TimeSpan? delay = null)
+    {
+        logger.LogWarning(
+            "Transient failure for {Resource} (attempt {Attempt}/{MaxAttempts}, status {StatusCode}, error {ErrorType}); retrying after {Delay}.",
+            resourceName,
+            attempt + 1,
+            maxAttempts,
+            statusCode,
+            errorType,
+            delay ?? RetryDelays[Math.Min(attempt, RetryDelays.Length - 1)]);
     }
 
     private static bool IsTransient(HttpStatusCode statusCode) =>
         statusCode == HttpStatusCode.TooManyRequests ||
         statusCode == HttpStatusCode.RequestTimeout ||
+        statusCode == HttpStatusCode.InternalServerError ||
         statusCode == HttpStatusCode.GatewayTimeout ||
         statusCode == HttpStatusCode.ServiceUnavailable ||
         statusCode == HttpStatusCode.BadGateway;
 
-    private static Task DelayAsync(int attempt, CancellationToken cancellationToken) =>
-        Task.Delay(RetryDelays[Math.Min(attempt, RetryDelays.Length - 1)], cancellationToken);
+    private static bool IsTransientTransportFailure(Exception exception) =>
+        exception is HttpRequestException or TaskCanceledException or IOException;
+
+    private static TimeSpan GetRetryDelay(int attempt, System.Net.Http.Headers.RetryConditionHeaderValue? retryAfter)
+    {
+        var delay = RetryDelays[Math.Min(attempt, RetryDelays.Length - 1)];
+        var providerDelay = retryAfter?.Delta
+            ?? (retryAfter?.Date is { } retryAt ? retryAt - DateTimeOffset.UtcNow : null);
+        return providerDelay is { } value && value > delay ? value : delay;
+    }
+
+    private static Task DelayAsync(
+        int attempt,
+        System.Net.Http.Headers.RetryConditionHeaderValue? retryAfter,
+        CancellationToken cancellationToken) =>
+        Task.Delay(GetRetryDelay(attempt, retryAfter), cancellationToken);
 }

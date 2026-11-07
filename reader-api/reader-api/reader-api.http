@@ -7,6 +7,8 @@ Accept: application/json
 
 @readerToken = replace-with-access-token
 @savedTranslationId = replace-with-guid
+@mangaId = replace-with-mangadex-id
+@pdfId = replace-with-pdf-guid
 
 ### Save a translation to the authenticated user's vocabulary
 POST {{reader_api_HostAddress}}/api/vocabulary
@@ -43,6 +45,23 @@ Authorization: Bearer {{readerToken}}
 ### Proxy one MangaDex chapter image through the Reader API for canvas/OCR
 GET {{reader_api_HostAddress}}/api/catalog/chapters/{{chapterId}}/pages/0
 Accept: image/jpeg
+
+### List active library items (archived items are excluded by default)
+GET {{reader_api_HostAddress}}/api/library?page=1&pageSize=20
+Authorization: Bearer {{readerToken}}
+Accept: application/json
+
+### List only archived library items
+GET {{reader_api_HostAddress}}/api/library?archivedOnly=true&page=1&pageSize=20
+Authorization: Bearer {{readerToken}}
+Accept: application/json
+
+### Archive or restore a MangaDex library item
+PUT {{reader_api_HostAddress}}/api/library/{{mangaId}}/archive
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "isArchived": true }
 
 ### Import a PDF into the authenticated user's library (maximum 100 MB)
 POST {{reader_api_HostAddress}}/api/library/pdfs
@@ -83,3 +102,10 @@ Authorization: ******
 ### Remove an imported PDF
 DELETE {{reader_api_HostAddress}}/api/library/pdfs/{{pdfId}}
 Authorization: Bearer {{readerToken}}
+
+### Archive or restore an imported PDF without deleting its file or progress
+PUT {{reader_api_HostAddress}}/api/library/pdfs/{{pdfId}}/archive
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{ "isArchived": true }
